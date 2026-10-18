@@ -139,7 +139,7 @@ In strict adherence to Hackathon Rule 6, FinGraph AI utilizes **only verified, p
 ### Step 1: Clone and Configure Environment
 ```bash
 git clone https://github.com/workparty360/FinGraphAI.git
-cd FinGraphAI/Fin_Model_123
+cd FinGraphAI
 nano .env
 ```
 

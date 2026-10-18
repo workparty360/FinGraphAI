@@ -1,8 +1,10 @@
 import os
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "/home/ubuntu/Fin_Model_123")
-os.chdir("/home/ubuntu/Fin_Model_123")
+APP_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(APP_DIR))
+os.chdir(APP_DIR)
 
 from dotenv import load_dotenv
 

@@ -2,13 +2,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP_DIR="$SCRIPT_DIR"
-
-if [ -d "$SCRIPT_DIR/Fin_Model_123" ]; then
-    APP_DIR="$SCRIPT_DIR/Fin_Model_123"
-fi
-
-cd "$APP_DIR"
+cd "$SCRIPT_DIR"
 
 if [ -f ".venv/bin/streamlit" ]; then
     echo "Starting FinGraph AI via virtual environment..."
