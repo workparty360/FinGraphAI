@@ -83,7 +83,7 @@ def _docs_from_financial_statements(stock_context: dict) -> list[Document]:
     docs: list[Document] = []
     intro = f"Symbol: {symbol}; Company: {company}; Exchange: {exchange}; Currency: {currency}. "
 
-    # ── 1. Company Profile & Sector Overview ────────────────────────────────
+    # Company Profile & Sector Overview
     try:
         overview = get_company_overview(symbol)
         overview_text = (
@@ -103,7 +103,7 @@ def _docs_from_financial_statements(stock_context: dict) -> list[Document]:
     except Exception:
         pass
 
-    # ── 2. Live Price & Day Range ────────────────────────────────────────────
+    # Live Price & Day Range
     try:
         price_data = get_stock_price(symbol)
         price = price_data.get("price")
@@ -140,7 +140,7 @@ def _docs_from_financial_statements(stock_context: dict) -> list[Document]:
     except Exception:
         pass
 
-    # ── 3. Valuation & Key Metrics ───────────────────────────────────────────
+    # Valuation & Key Metrics
     try:
         import yfinance as yf
         info = yf.Ticker(symbol).info or {}
@@ -178,7 +178,6 @@ def _docs_from_financial_statements(stock_context: dict) -> list[Document]:
             "Float Shares": info.get("floatShares"),
             "Employees": info.get("fullTimeEmployees"),
         }
-        # Filter out None values
         valid = {k: v for k, v in fields.items() if v is not None}
         if valid:
             metrics_text = (
@@ -193,7 +192,7 @@ def _docs_from_financial_statements(stock_context: dict) -> list[Document]:
     except Exception:
         pass
 
-    # ── 4. Historical Price Summary (1-year) ─────────────────────────────────
+    # Historical Price Summary (1-year)
     try:
         hist_1y = get_historical_prices(symbol, range="1y")
         if hist_1y.get("dataPoints", 0) > 0:
@@ -218,7 +217,7 @@ def _docs_from_financial_statements(stock_context: dict) -> list[Document]:
     except Exception:
         pass
 
-    # ── 5. Historical Price Summary (1-month) ────────────────────────────────
+    # Historical Price Summary (1-month)
     try:
         hist_1m = get_historical_prices(symbol, range="1mo")
         if hist_1m.get("dataPoints", 0) > 0:
@@ -244,7 +243,7 @@ def _docs_from_financial_statements(stock_context: dict) -> list[Document]:
     except Exception:
         pass
 
-    # ── 6. Annual & Quarterly Financial Statements ───────────────────────────
+    # Annual & Quarterly Financial Statements
     for stmt_type in ["income", "balance", "cashflow"]:
         for period in ["annual", "quarterly"]:
             try:
@@ -859,34 +858,34 @@ def render_stock_api_analysis(workspace: str, user: str, thread: str, embedding_
     """Main Stock Analysis Dashboard combining centralized context, chart, financial overview, statements, documents, and diagnostics."""
     st.header("Stock Analysis Dashboard")
 
-    # 1. Centralized Stock Selector & Live Overview Banner
+    # Centralized Stock Selector & Live Overview Banner
     selected_stock = _render_stock_selector()
     st.divider()
 
-    # 2. Stock Price Graph (interactive crosshair, time ranges, strictly non-negative)
+    # Stock Price Graph (interactive crosshair, time ranges, strictly non-negative)
     _render_stock_price_chart(selected_stock)
     st.divider()
 
-    # 3. Financial Overview (key metrics cards: Revenue, Net Income, Gross Margin, Free Cash Flow, Market Cap)
+    # Financial Overview (key metrics cards: Revenue, Net Income, Gross Margin, Free Cash Flow, Market Cap)
     _render_financial_overview(selected_stock)
     st.divider()
 
-    # 4. Financial Statements (independent fragment with unit formatting and cached views)
+    # Financial Statements (independent fragment with unit formatting and cached views)
     _render_financial_statements(selected_stock)
     st.divider()
 
-    # 5. Financial Documents Viewer (independent fragment with pagination)
+    # Financial Documents Viewer (independent fragment with pagination)
     _render_document_viewer(selected_stock)
     st.divider()
 
-    # 6. AI Agent Team Chat for Selected Stock
+    # AI Agent Team Chat for Selected Stock
     st.subheader("💬 AI Financial Analyst Team")
     st.caption("Ask questions directly about the selected stock, financial statements, or multi-year performance.")
     thread_key = f"dash_{selected_stock['symbol'] if selected_stock else 'main'}"
     _render_ai_chat_section(workspace, user, thread_key, selected_stock, embedding_model)
     st.divider()
 
-    # 7. Service Diagnostics (Admin / Developer view, collapsed on demand)
+    # Service Diagnostics (Admin / Developer view, collapsed on demand)
     _render_service_diagnostics_section()
 
 
@@ -916,7 +915,6 @@ def _render_service_diagnostics_section():
                 sg.run_health_checks()
             st.success("Health probes completed.")
 
-        # Service Status Overview
         statuses = sg.get_all_statuses()
         if not statuses:
             st.info("No service status data available yet. Click 'Run Health Probes' above.")

@@ -303,7 +303,7 @@ def seed():
     logger.info("Initializing Financial Knowledge Graph schema...")
     fkg.init_schema()
 
-    # 1. Seed Sectors
+    # Seed Sectors
     logger.info("Seeding Sectors...")
     for s in SECTORS:
         fkg.query(
@@ -311,7 +311,7 @@ def seed():
             {"id": s["id"], "name": s["name"]}
         )
 
-    # 2. Seed Industries and link to Sectors
+    # Seed Industries and link to Sectors
     logger.info("Seeding Industries...")
     for ind in INDUSTRIES:
         fkg.query(
@@ -326,7 +326,7 @@ def seed():
             {"id": ind["id"], "name": ind["name"], "sector_id": ind["sector_id"]}
         )
 
-    # 3. Seed Companies and link to Sectors & Industries
+    # Seed Companies and link to Sectors & Industries
     logger.info("Seeding Companies...")
     for c in COMPANIES:
         fkg.query(
@@ -348,7 +348,7 @@ def seed():
             }
         )
 
-    # 4. Seed Financial Metrics
+    # Seed Financial Metrics
     logger.info("Seeding Financial Metrics...")
     for m in METRICS:
         fkg.query(
@@ -360,7 +360,7 @@ def seed():
             {"id": m["id"], "name": m["name"], "unit": m["unit"], "description": m["description"]}
         )
 
-    # 5. Seed Source Documents
+    # Seed Source Documents
     logger.info("Seeding Source Documents...")
     for doc in SOURCE_DOCUMENTS:
         fkg.query(
@@ -377,7 +377,7 @@ def seed():
             }
         )
 
-    # 6. Seed Observations, Reporting Periods, Statements, and Relationships
+    # Seed Observations, Reporting Periods, Statements, and Relationships
     logger.info(f"Seeding {len(OBSERVATIONS)} Financial Observations...")
     for obs in OBSERVATIONS:
         ticker = obs["ticker"]

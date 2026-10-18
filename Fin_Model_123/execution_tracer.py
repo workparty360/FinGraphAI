@@ -1,38 +1,8 @@
-"""Structured execution tracer and error categories for FinModel AI.
-
-Provides structured tracing across LangGraph stages:
-- REQUEST_RECEIVED
-- QUERY_PLANNED
-- COMPANY_RESOLVED
-- RETRIEVAL_STARTED
-- RETRIEVAL_COMPLETED
-- PROMPT_CONSTRUCTED
-- GROQ_REQUEST_STARTED
-- GROQ_RESPONSE_RECEIVED
-- ANALYST_COMPLETED
-- MEMORY_PERSISTED
-- RESPONSE_RENDERED
-
-Explicit error categories:
-- GROQ_AUTH_ERROR
-- GROQ_RATE_LIMIT
-- GROQ_MODEL_ERROR
-- GROQ_NETWORK_ERROR
-- GROQ_TOOL_ERROR
-- FALKORDB_CONNECTION_ERROR
-- FALKORDB_QUERY_ERROR
-- SEC_API_ERROR
-- FINANCIAL_DATA_MISSING
-- QUERY_PLANNING_ERROR
-- AGENT_EXECUTION_ERROR
-- RESPONSE_RENDERING_ERROR
-"""
+"""Trace application stages and classify errors without recording sensitive data."""
 from __future__ import annotations
 
-import json
 import logging
 import os
-import time
 import uuid
 from collections import deque
 from datetime import datetime, timezone
@@ -40,7 +10,7 @@ from typing import Any
 
 logger = logging.getLogger("execution_tracer")
 
-# Explicit Error Categories (Section 15)
+# Error categories
 GROQ_AUTH_ERROR = "GROQ_AUTH_ERROR"
 GROQ_RATE_LIMIT = "GROQ_RATE_LIMIT"
 GROQ_MODEL_ERROR = "GROQ_MODEL_ERROR"
@@ -54,7 +24,7 @@ QUERY_PLANNING_ERROR = "QUERY_PLANNING_ERROR"
 AGENT_EXECUTION_ERROR = "AGENT_EXECUTION_ERROR"
 RESPONSE_RENDERING_ERROR = "RESPONSE_RENDERING_ERROR"
 
-# Explicit Tracing Stages (Section 7)
+# Request stages
 STAGE_REQUEST_RECEIVED = "REQUEST_RECEIVED"
 STAGE_QUERY_PLANNED = "QUERY_PLANNED"
 STAGE_COMPANY_RESOLVED = "COMPANY_RESOLVED"
@@ -145,7 +115,6 @@ def clear_traces() -> None:
 def classify_app_error(exc: Exception | str) -> str:
     """Map any exception to one of the explicit error categories (Section 15)."""
     msg = str(exc).lower()
-    exc_type = type(exc).__name__ if isinstance(exc, Exception) else ""
 
     if any(k in msg for k in ("401", "unauthorized", "invalid_api_key", "invalid api key")):
         return GROQ_AUTH_ERROR

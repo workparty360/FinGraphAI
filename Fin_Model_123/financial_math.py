@@ -1,9 +1,4 @@
-"""Deterministic financial calculations engine.
-
-Moves financial math (revenue growth, margins, free cash flow) out of the LLM
-and into decimal-safe Python code. This saves thousands of reasoning tokens
-and guarantees calculation accuracy.
-"""
+"""Financial calculations and year comparisons performed directly in Python."""
 from __future__ import annotations
 
 import logging
@@ -70,7 +65,6 @@ def calculate_free_cash_flow(operating_cf: float | None, capex: float | None) ->
     """
     if operating_cf is None or capex is None:
         return {"fcf": None, "formatted": "N/A"}
-    # If capex is reported as negative outflow, subtract abs(capex)
     actual_fcf = operating_cf - abs(capex)
     return {
         "fcf": round(actual_fcf, 2),
@@ -160,7 +154,6 @@ def analyze_best_performing_year(
             currency = c
             break
 
-    # Extract metrics per year
     rows: list[dict[str, Any]] = []
     prev_rev: float | None = None
     prev_net: float | None = None
@@ -195,44 +188,27 @@ def analyze_best_performing_year(
         if net is not None:
             prev_net = net
 
-    # Find leaders for each metric
     leaders: dict[str, Any] = {}
 
-    valid_rev = [(r["year"], r["revenue"]) for r in rows if r["revenue"] is not None]
-    if valid_rev:
-        best_rev_yr, best_rev_val = max(valid_rev, key=lambda x: x[1])
-        leaders["highest_revenue"] = {
-            "year": best_rev_yr,
-            "value": best_rev_val,
-            "formatted": format_financial_amount(best_rev_val, currency),
-        }
-
-    valid_net = [(r["year"], r["net_income"]) for r in rows if r["net_income"] is not None]
-    if valid_net:
-        best_net_yr, best_net_val = max(valid_net, key=lambda x: x[1])
-        leaders["highest_net_income"] = {
-            "year": best_net_yr,
-            "value": best_net_val,
-            "formatted": format_financial_amount(best_net_val, currency),
-        }
-
-    valid_margin = [(r["year"], r["operating_margin"]) for r in rows if r["operating_margin"] is not None]
-    if valid_margin:
-        best_margin_yr, best_margin_val = max(valid_margin, key=lambda x: x[1])
-        leaders["highest_operating_margin"] = {
-            "year": best_margin_yr,
-            "value": best_margin_val,
-            "formatted": f"{best_margin_val:.2f}%",
-        }
-
-    valid_fcf = [(r["year"], r["free_cash_flow"]) for r in rows if r["free_cash_flow"] is not None]
-    if valid_fcf:
-        best_fcf_yr, best_fcf_val = max(valid_fcf, key=lambda x: x[1])
-        leaders["highest_free_cash_flow"] = {
-            "year": best_fcf_yr,
-            "value": best_fcf_val,
-            "formatted": format_financial_amount(best_fcf_val, currency),
-        }
+    metric_values = {}
+    for metric, leader_name in (
+        ("revenue", "highest_revenue"),
+        ("net_income", "highest_net_income"),
+        ("operating_margin", "highest_operating_margin"),
+        ("free_cash_flow", "highest_free_cash_flow"),
+    ):
+        values = [(row["year"], row[metric]) for row in rows if row[metric] is not None]
+        metric_values[metric] = values
+        if values:
+            year, value = max(values, key=lambda item: item[1])
+            leaders[leader_name] = {
+                "year": year,
+                "value": value,
+                "formatted": (
+                    f"{value:.2f}%" if metric == "operating_margin"
+                    else format_financial_amount(value, currency)
+                ),
+            }
 
     valid_rev_growth = [(r["year"], r["revenue_growth"]["pct_change"]) for r in rows if r["revenue_growth"] and r["revenue_growth"]["pct_change"] is not None]
     if valid_rev_growth:
@@ -252,15 +228,9 @@ def analyze_best_performing_year(
             "formatted": f"{best_ng_val:+.2f}%",
         }
 
-    # Composite Ranking across years
     year_ranks: dict[int, list[int]] = {yr: [] for yr in sorted_years}
 
-    for metric_name, valid_list in [
-        ("revenue", valid_rev),
-        ("net_income", valid_net),
-        ("operating_margin", valid_margin),
-        ("free_cash_flow", valid_fcf),
-    ]:
+    for valid_list in metric_values.values():
         if valid_list:
             sorted_by_val = sorted(valid_list, key=lambda x: x[1], reverse=True)
             for rank, (yr, _) in enumerate(sorted_by_val, start=1):
@@ -273,7 +243,6 @@ def analyze_best_performing_year(
 
     best_composite_year = min(composite_scores, key=composite_scores.get) if composite_scores else sorted_years[-1]
 
-    # Build Markdown Comparison Table
     table_lines = [
         "| Fiscal Year | Total Revenue | YoY Rev Growth | Net Income | YoY Net Income Growth | Operating Margin | Free Cash Flow |",
         "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
@@ -290,7 +259,6 @@ def analyze_best_performing_year(
 
     table_md = "\n".join(table_lines)
 
-    # Build Natural Language Summary
     summary_parts = []
     summary_parts.append(
         f"**Best Performance Overview for {sym} (FY{sorted_years[0]}–FY{sorted_years[-1]}):**\n"
@@ -346,7 +314,6 @@ def compare_financial_performance(
 
     sym = ticker.strip().upper()
     try:
-        # Retrieve observations for start and end year
         rev_start = fkg.get_company_financials(sym, "Total Revenue", fiscal_year=start_year)
         rev_end = fkg.get_company_financials(sym, "Total Revenue", fiscal_year=end_year)
 

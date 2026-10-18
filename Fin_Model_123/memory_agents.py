@@ -140,7 +140,7 @@ def tool_company_overview(symbol: str) -> str:
         return json.dumps({"error": str(exc), "symbol": symbol})
 
 
-# ── Service Diagnostic Tools (only called when user asks about technical failures) ──
+# Service Diagnostic Tools (only called when user asks about technical failures)
 
 _DIAGNOSTIC_KEYWORDS = (
     "not loading", "not working", "not displaying", "not showing", "broken",
@@ -445,7 +445,7 @@ def plan_financial_query(
         resolve_company as sr_resolve_company,
     )
 
-    # 1. Resolve Companies and Tickers from question
+    # Resolve Companies and Tickers from question
     companies_found = resolve_companies_from_text(question)
 
     is_referring_to_selected = any(p in q_lower for p in ["this company", "this stock", "selected company", "selected stock", "current stock", "current company", "of this"])
@@ -492,7 +492,6 @@ def plan_financial_query(
                     "sec_supported": not fallback_sym.endswith((".NS", ".BO")),
                 }]
 
-    # Set target company and ticker
     if companies_found:
         primary = companies_found[0]
         target_ticker = primary["ticker"]
@@ -513,7 +512,7 @@ def plan_financial_query(
         target_currency = "USD"
         target_exchange = "US"
 
-    # 2. Extract Years from Question and History
+    # Extract Years from Question and History
     years_in_q = [int(y) for y in re.findall(r"(?<!\d)(?:19|20)\d{2}(?!\d)", question)]
 
     # Extract years from recent conversation turns
@@ -526,7 +525,7 @@ def plan_financial_query(
                 if y not in years_in_history:
                     years_in_history.append(y)
 
-    # 3. Intent Classification
+    # Intent Classification
     is_follow_up_comparison = (
         len(years_in_history) >= 2
         and any(k in q_lower for k in [
@@ -587,7 +586,6 @@ def plan_financial_query(
         intent = "general_knowledge"
         target_years = years_in_q
 
-    # Target Metric Detection
     target_metric = None
     if any(k in q_lower for k in ["free cash flow", "cash flow", "fcf"]):
         target_metric = "Free Cash Flow"
@@ -659,14 +657,14 @@ def deterministic_fetch_financial_data(question: str, ticker: str, target_years:
             )
         else:
             try:
-                # 0. Best Performing Year Analysis in pure Python
+                # Best Performing Year Analysis in pure Python
                 if is_best_year_q:
                     from financial_math import analyze_best_performing_year
                     best_perf = analyze_best_performing_year(ticker, fkg=fkg)
                     if best_perf and not best_perf.get("error"):
                         data["best_performing_year_analysis"] = best_perf
 
-                # 0b. Deterministic Multi-Year Performance Comparison in pure Python
+                # Deterministic Multi-Year Performance Comparison in pure Python
                 if len(years) >= 2 and any(k in q_lower for k in ["between", "from", "to", "compare", "growth", "performance", "vs", "versus", "better", "more profitable"]):
                     from financial_math import compare_financial_performance
                     y_start, y_end = min(years[:2]), max(years[:2])
@@ -674,11 +672,11 @@ def deterministic_fetch_financial_data(question: str, ticker: str, target_years:
                     if perf and not perf.get("error"):
                         data["deterministic_performance_comparison"] = perf
 
-                # 1. Peer Sector comparison
+                # Peer Sector comparison
                 if any(k in q_lower for k in ["peer", "peers", "sector", "higher margin", "operating margin"]):
                     data["graph_sector_peers"] = fkg.get_peer_metric_comparison(ticker, "Operating Margin")
 
-                # 2. Cross-company comparison (detect other tickers like MSFT, AAPL, GOOGL, NVDA)
+                # Cross-company comparison (detect other tickers like MSFT, AAPL, GOOGL, NVDA)
                 other_tickers = []
                 for name, sym in KNOWN_TICKER_MAPPINGS.items():
                     if sym != ticker and (sym.lower() in q_lower or name.lower() in q_lower):
@@ -688,7 +686,7 @@ def deterministic_fetch_financial_data(question: str, ticker: str, target_years:
                     data["graph_cross_company_revenue"] = fkg.compare_company_metrics(all_tickers, "Total Revenue")
                     data["graph_cross_company_margin"] = fkg.compare_company_metrics(all_tickers, "Operating Margin")
 
-                # 3. Evidence / provenance queries
+                # Evidence / provenance queries
                 if any(k in q_lower for k in ["evidence", "where did", "source", "provenance", "came from", "filing"]):
                     fy = years[0] if years else 2024
                     target_metric = "Net Income" if "income" in q_lower else ("Total Revenue" if "revenue" in q_lower else "Operating Margin")
@@ -696,7 +694,7 @@ def deterministic_fetch_financial_data(question: str, ticker: str, target_years:
                     if ev:
                         data["graph_evidence_path"] = ev
 
-                # 4. Specific single-year metric query in FalkorDB (e.g. Reliance revenue in FY2025)
+                # Specific single-year metric query in FalkorDB (e.g. Reliance revenue in FY2025)
                 if years and any(k in q_lower for k in ["revenue", "sales", "net income", "profit", "operating margin", "cash flow", "free cash flow", "margin", "fcf"]):
                     if any(k in q_lower for k in ["free cash flow", "cash flow", "fcf"]):
                         metric_name = "Free Cash Flow"
@@ -710,7 +708,7 @@ def deterministic_fetch_financial_data(question: str, ticker: str, target_years:
                     if obs:
                         data["graph_metric_observation"] = obs[0]
 
-                # 4b. Single-year comprehensive annual overview in FalkorDB
+                # Single-year comprehensive annual overview in FalkorDB
                 if len(years) == 1:
                     y = years[0]
                     ann = fkg.get_annual_financials(ticker, years=[y])
@@ -725,21 +723,21 @@ def deterministic_fetch_financial_data(question: str, ticker: str, target_years:
             except Exception as exc:
                 data["graph_query_error"] = str(exc)
 
-    # 1. Price queries
+    # Price queries
     if any(k in q_lower for k in ["price", "quote", "cost", "value", "trading", "worth", "share price", "day high", "day low"]):
         try:
             data["current_price"] = get_stock_price(ticker)
         except Exception as exc:
             data["current_price_error"] = str(exc)
 
-    # 2. Historical / chart queries
+    # Historical / chart queries
     if any(k in q_lower for k in ["history", "historical", "trend", "past", "1m", "3m", "6m", "1y", "5y", "chart"]):
         try:
             data["historical_prices"] = get_historical_prices(ticker, range="1mo")
         except Exception as exc:
             data["historical_prices_error"] = str(exc)
 
-    # 3. Income / Revenue / Profit queries (only if not already satisfied by graph observation or calculation)
+    # Income / Revenue / Profit queries (only if not already satisfied by graph observation or calculation)
     if any(k in q_lower for k in ["revenue", "sales", "income", "profit", "net income", "ebitda", "operating", "margin", "earnings", "topline", "bottomline"]):
         if "graph_metric_observation" not in data and "deterministic_performance_comparison" not in data and "best_performing_year_analysis" not in data:
             is_quarter = any(k in q_lower for k in ["quarter", "q1", "q2", "q3", "q4"])
@@ -749,7 +747,7 @@ def deterministic_fetch_financial_data(question: str, ticker: str, target_years:
             except Exception as exc:
                 data[f"{period}_income_statement_error"] = str(exc)
 
-    # 4. Balance Sheet queries
+    # Balance Sheet queries
     if any(k in q_lower for k in ["balance", "asset", "liability", "liabilities", "debt", "equity", "borrowing", "reserves"]):
         is_quarter = any(k in q_lower for k in ["quarter", "q1", "q2", "q3", "q4"])
         period = "quarterly" if is_quarter else "annual"
@@ -758,7 +756,7 @@ def deterministic_fetch_financial_data(question: str, ticker: str, target_years:
         except Exception as exc:
             data[f"{period}_balance_sheet_error"] = str(exc)
 
-    # 5. Cash Flow queries
+    # Cash Flow queries
     if any(k in q_lower for k in ["cash", "cash flow", "cashflow", "operating cash", "free cash", "capex", "capital expenditure"]):
         is_quarter = any(k in q_lower for k in ["quarter", "q1", "q2", "q3", "q4"])
         period = "quarterly" if is_quarter else "annual"
@@ -767,7 +765,7 @@ def deterministic_fetch_financial_data(question: str, ticker: str, target_years:
         except Exception as exc:
             data[f"{period}_cash_flow_error"] = str(exc)
 
-    # 6. Company Overview queries (only when explicitly asked or minimal facts)
+    # Company Overview queries (only when explicitly asked or minimal facts)
     if any(k in q_lower for k in ["company", "business", "sector", "industry", "overview", "about", "market cap", "pe ratio"]) or len(data) <= 1:
         try:
             data["company_overview"] = get_company_overview(ticker)
@@ -791,14 +789,14 @@ def _format_quota_fallback(
 
     has_data = False
 
-    # 0. Best Performing Year Analysis
+    # Best Performing Year Analysis
     best_perf = backend_data.get("best_performing_year_analysis")
     if best_perf and not best_perf.get("error"):
         has_data = True
         lines.append(f"### Verified Financial Performance Analysis: {company} (`{ticker}`)")
         lines.append(best_perf.get("summary_text", ""))
 
-    # 1. Deterministic Multi-Year Comparison
+    # Deterministic Multi-Year Comparison
     perf = backend_data.get("deterministic_performance_comparison")
     if perf and not perf.get("error"):
         has_data = True
@@ -821,7 +819,7 @@ def _format_quota_fallback(
             for n in notes:
                 lines.append(f"- {n}")
 
-    # 2. Graph Single-Metric Observation
+    # Graph Single-Metric Observation
     obs = backend_data.get("graph_metric_observation")
     if obs:
         has_data = True
@@ -834,7 +832,7 @@ def _format_quota_fallback(
         lines.append(f"- **Source:** {src}")
         lines.append(f"- **Provenance:** FalkorDB Financial Knowledge Graph (Observation node)")
 
-    # 2b. Single-Year Financial Overview
+    # Single-Year Financial Overview
     s_over = backend_data.get("single_year_overview")
     if s_over and s_over.get("metrics"):
         has_data = True
@@ -854,7 +852,7 @@ def _format_quota_fallback(
                     lines.append(f"| **{m_name}** | {format_financial_amount(val, curr)} |")
         lines.append(f"\n*Source: Official Regulatory Filing (Form 10-K / Annual Report) in FalkorDB.*")
 
-    # 2c. Evidence & Provenance Path
+    # Evidence & Provenance Path
     ev = backend_data.get("graph_evidence_path")
     if ev:
         has_data = True
@@ -864,7 +862,7 @@ def _format_quota_fallback(
         lines.append(f"- **Source Document:** [{ev.get('document_title')}]({ev.get('document_url')})")
         lines.append(f"- **Provenance Path:** `{ev.get('evidence_path')}`")
 
-    # 3. Peer Comparison
+    # Peer Comparison
     peers = backend_data.get("graph_sector_peers")
     if peers:
         has_data = True
@@ -874,7 +872,7 @@ def _format_quota_fallback(
         for p in peers:
             lines.append(f"| {p.get('company', p.get('ticker'))} | {p.get('ticker')} | {p.get('operating_margin')}% |")
 
-    # 4. Cross-Company Revenue
+    # Cross-Company Revenue
     cross_rev = backend_data.get("graph_cross_company_revenue")
     if cross_rev:
         has_data = True
@@ -882,7 +880,7 @@ def _format_quota_fallback(
         for r in cross_rev:
             lines.append(f"- **{r.get('ticker')}:** {r.get('formatted', r.get('amount'))} (FY{r.get('fiscal_year')})")
 
-    # 5. Current Price
+    # Current Price
     curr_price = backend_data.get("current_price")
     if curr_price and not curr_price.get("error"):
         has_data = True
@@ -988,7 +986,7 @@ class FinanceAgentTeam:
         stock_ctx = state.get("stock_context") or {}
         active_ticker = state.get("ticker") or stock_ctx.get("symbol", "")
 
-        # 1. Fetch recent conversation turns to provide multi-turn context
+        # Fetch recent conversation turns to provide multi-turn context
         history = []
         for turn in self.memory.recent_turns(state["thread_id"], limit=6):
             t_text = turn.get("text") or turn.get("content", "")
@@ -998,7 +996,7 @@ class FinanceAgentTeam:
                 "content": t_text[:300] if len(t_text) > 300 else t_text,
             })
 
-        # 2. Run query planning layer
+        # Run query planning layer
         plan = plan_financial_query(
             question=question,
             active_ticker=active_ticker,
@@ -1215,7 +1213,7 @@ class FinanceAgentTeam:
 
         is_diag = _is_diagnostic_question(question)
 
-        # 1. System diagnostics handling
+        # System diagnostics handling
         if is_diag:
             sg = _get_sg()
             if sg is not None:
@@ -1246,7 +1244,7 @@ class FinanceAgentTeam:
             )
             return {"answer": answer, "curator_handoff": curator_handoff, "request_id": req_id}
 
-        # 2. Build structured analyst prompt package
+        # Build structured analyst prompt package
         handoff_data = dict(handoff)
         handoff_data["target_ticker"] = target_ticker
         handoff_data["active_ticker"] = active_ticker
@@ -1270,7 +1268,7 @@ class FinanceAgentTeam:
             approx_prompt_tokens=prompt_pkg["approx_prompt_tokens"],
         )
 
-        # 3. Check for unspecified company follow-up (TEST 6 requirement)
+        # Check for unspecified company follow-up (TEST 6 requirement)
         if prompt_pkg.get("is_unspecified_company"):
             answer = prompt_pkg["clarification_message"]
             record_trace(req_id, STAGE_ANALYST_COMPLETED, "financial_analyst", duration_secs=time.time() - t0)
@@ -1285,7 +1283,7 @@ class FinanceAgentTeam:
 
         answer: str | None = None
 
-        # 4. Custom Mock LLM handling (for unit test suites)
+        # Custom Mock LLM handling (for unit test suites)
         is_custom_mock = self.llm is not None and getattr(getattr(self.llm, "__class__", None), "__name__", "") != "ChatGroq"
         if is_custom_mock and hasattr(self.llm, "bind_tools"):
             active_tools = list(self.tools)
@@ -1332,7 +1330,7 @@ class FinanceAgentTeam:
             except Exception as exc:
                 logger.warning(f"Mock LLM invocation error: {exc}")
 
-        # 5. Production Groq LLM Invocation (with key manager failover & tracing)
+        # Production Groq LLM Invocation (with key manager failover & tracing)
         if not answer and not is_custom_mock:
             groq_t0 = time.time()
             record_trace(
@@ -1397,7 +1395,7 @@ class FinanceAgentTeam:
                     )
                     logger.warning(f"LLM call failed with {err_cat}: {exc}. Triggering deterministic fallback.")
 
-        # 6. Deterministic Fallback if Groq was unavailable or returned empty
+        # Deterministic Fallback if Groq was unavailable or returned empty
         if not answer or not str(answer).strip():
             if prompt_pkg.get("is_general_knowledge"):
                 q_l = question.lower()

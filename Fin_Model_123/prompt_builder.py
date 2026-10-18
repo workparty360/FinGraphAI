@@ -28,10 +28,8 @@ def is_general_financial_query(question: str) -> bool:
     if not q_lower:
         return False
 
-    # Check for specific fiscal years (e.g. "2023", "2024", "FY22")
     has_year = bool(re.search(r"\b(?:19|20)\d{2}\b", q_lower)) or bool(re.search(r"\bfy\s*\d{2,4}\b", q_lower))
 
-    # General concept indicator phrases
     general_phrases = [
         "what is ", "what are ", "explain ", "define ", "meaning of ",
         "how does ", "how do ", "difference between ", "formula for ",
@@ -39,7 +37,6 @@ def is_general_financial_query(question: str) -> bool:
     ]
     is_general_phrase = any(q_lower.startswith(p) or f" {p}" in q_lower for p in general_phrases)
 
-    # Financial terms typically asked in general explanations
     financial_terms = [
         "return on equity", "roe", "return on assets", "roa", "return on capital", "roce",
         "balance sheet", "income statement", "cash flow statement", "free cash flow",
@@ -73,10 +70,7 @@ def is_unspecified_company_follow_up(question: str, target_ticker: str, conversa
     has_follow_up_phrase = any(p in q_lower for p in ["what about", "how about", "and in", "what was", "how much was"])
 
     # If it asks for year-specific or company data with no company active
-    if (has_year or has_company_data_words or has_follow_up_phrase) and not is_general_financial_query(question):
-        return True
-
-    return False
+    return (has_year or has_company_data_words or has_follow_up_phrase) and not is_general_financial_query(question)
 
 
 def build_analyst_prompt_package(
@@ -166,7 +160,7 @@ def build_analyst_prompt_package(
     sources: list[dict[str, Any]] = []
     calculated_metrics: list[dict[str, Any]] = []
 
-    # 1. Extract exact metric observations
+    # Extract exact metric observations
     exact_m = retrieved_data.get("exact_metric")
     if exact_m and exact_m.get("value") is not None:
         financial_facts.append({
@@ -186,7 +180,7 @@ def build_analyst_prompt_package(
                 "filing_type": exact_m.get("filing_type", "Form 10-K"),
             })
 
-    # 2. Extract single year overview
+    # Extract single year overview
     syo = retrieved_data.get("single_year_overview")
     if syo and syo.get("metrics"):
         yr = syo.get("year")
@@ -204,7 +198,7 @@ def build_analyst_prompt_package(
                     "source": f"Form 10-K (FY{yr})",
                 })
 
-    # 3. Extract best year analysis
+    # Extract best year analysis
     bya = retrieved_data.get("best_year_analysis")
     if bya and not bya.get("error"):
         calculated_metrics.append({
@@ -219,7 +213,7 @@ def build_analyst_prompt_package(
             "summary": bya.get("summary_text"),
         })
 
-    # 4. Extract performance comparison
+    # Extract performance comparison
     pc = retrieved_data.get("performance_comparison")
     if pc and not pc.get("error"):
         calculated_metrics.append({
@@ -233,7 +227,7 @@ def build_analyst_prompt_package(
             "summary": pc.get("summary_text"),
         })
 
-    # 5. Extract comparison data across multiple companies
+    # Extract comparison data across multiple companies
     comp_data = retrieved_data.get("comparison_data") or {}
     metrics_comp = comp_data.get("metrics_comparison", [])
     for row in metrics_comp:
@@ -254,7 +248,7 @@ def build_analyst_prompt_package(
                 "filing_type": row.get("filing_type", "Form 10-K"),
             })
 
-    # 6. Trace evidence path if available
+    # Trace evidence path if available
     ev_path = retrieved_data.get("evidence_path")
     if ev_path:
         sources.append({
@@ -264,14 +258,13 @@ def build_analyst_prompt_package(
             "provenance_path": ev_path.get("evidence_path"),
         })
 
-    # 7. Semantic and episodic memories
+    # Semantic and episodic memories
     relevant_memories = []
     for mem in (retrieved_data.get("memories") or []):
         m_content = mem.get("content", "") if isinstance(mem, dict) else str(mem)
         if m_content:
             relevant_memories.append(m_content[:200])
 
-    # Assemble structured context package
     context_package = {
         "question": question,
         "company": {
@@ -287,7 +280,6 @@ def build_analyst_prompt_package(
         "sources": sources,
     }
 
-    # Build prompt strings
     if len(companies) >= 2 or query_intent == "company_comparison":
         comp_descs = ", ".join(f"{c['name']} ({c['ticker']})" for c in companies)
         system_prompt = (
@@ -352,7 +344,7 @@ def build_analyst_prompt_package(
         for m in relevant_memories:
             context_lines.append(f"- {m}")
 
-    # 8. Retrieved documents from FalkorDB (indexed financial statements, overviews, etc.)
+    # Retrieved documents from FalkorDB (indexed financial statements, overviews, etc.)
     retrieved_docs = retrieved_data.get("documents") or []
     retrieved_docs += retrieved_data.get("exact_year_matches") or []
 

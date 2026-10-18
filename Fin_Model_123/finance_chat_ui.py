@@ -31,7 +31,6 @@ def render_chat_navigation(workspace: str, user: str, embedding_model) -> str:
     except Exception:
         memory = None
 
-    # Load persisted threads
     threads = []
     if memory:
         try:
@@ -39,7 +38,6 @@ def render_chat_navigation(workspace: str, user: str, embedding_model) -> str:
         except Exception:
             threads = []
 
-    # Ensure an active thread exists in session state
     if "active_thread_id" not in st.session_state:
         if threads:
             st.session_state.active_thread_id = threads[0]["id"]
@@ -147,7 +145,6 @@ def render_agent_chat(
     documents=None,
 ):
     """Render conversation interface for the active thread with shared FalkorDB memory access."""
-    # Normalize stock_context and ticker
     if isinstance(stock_context, str):
         ticker = stock_context.strip().upper()
         ctx = {
@@ -291,7 +288,6 @@ def render_standalone_chat_page(workspace: str, user: str, embedding_model) -> N
     st.subheader("💬 AI Financial Analyst")
     st.caption("Ask financial questions, analyze companies, or inspect historical trends.")
 
-    # Top conversation selector bar
     active_thread_id = render_chat_navigation(workspace, user, embedding_model)
     st.divider()
 

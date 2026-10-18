@@ -93,7 +93,7 @@ def classify_error(exc: Exception | str) -> QuotaClassification:
     """Analyze provider exception to determine recovery strategy."""
     msg = str(exc).lower()
 
-    # 1. Organization Daily Quota Exhaustion (TPD / RPD)
+    # Organization Daily Quota Exhaustion (TPD / RPD)
     if any(k in msg for k in ORG_QUOTA_KEYWORDS) or ("429" in msg and "day" in msg):
         retry_after = parse_retry_after(str(exc))
         return QuotaClassification(
@@ -105,7 +105,7 @@ def classify_error(exc: Exception | str) -> QuotaClassification:
             error_msg=str(exc),
         )
 
-    # 2. Key-specific Authentication Failure
+    # Key-specific Authentication Failure
     if any(p in msg for p in KEY_SPECIFIC_PATTERNS):
         return QuotaClassification(
             category="key_credential_invalid",
@@ -116,7 +116,7 @@ def classify_error(exc: Exception | str) -> QuotaClassification:
             error_msg=str(exc),
         )
 
-    # 3. Model Rate Limit (TPM / RPM) or generic key 429
+    # Model Rate Limit (TPM / RPM) or generic key 429
     if "429" in msg or "rate limit" in msg or "rate_limit" in msg:
         # Check if error specifies it was for a key vs org
         retry_after = parse_retry_after(str(exc))
@@ -131,7 +131,7 @@ def classify_error(exc: Exception | str) -> QuotaClassification:
             error_msg=str(exc),
         )
 
-    # 4. Transient network / service unavailable errors
+    # Transient network / service unavailable errors
     if any(p in msg for p in TRANSIENT_PATTERNS):
         return QuotaClassification(
             category="transient_network",
@@ -142,7 +142,7 @@ def classify_error(exc: Exception | str) -> QuotaClassification:
             error_msg=str(exc),
         )
 
-    # 5. Client error / Bad Request (400, invalid tool choice)
+    # Client error / Bad Request (400, invalid tool choice)
     return QuotaClassification(
         category="client_error",
         is_org_quota=False,
@@ -384,7 +384,7 @@ class APIKeyManager:
                     last_error = exc
                     classification = classify_error(exc)
 
-                    # 1. Organization Daily Limit (TPD / RPD) or Rate Limits
+                    # Organization Daily Limit (TPD / RPD) or Rate Limits
                     if classification.is_org_quota:
                         _model_tracker.record_rate_limit(
                             cur_model,
@@ -407,7 +407,7 @@ class APIKeyManager:
                             )
                             continue
 
-                    # 2. Key-specific failure (401 invalid key, revoked key)
+                    # Key-specific failure (401 invalid key, revoked key)
                     elif classification.is_key_specific or classification.is_retryable_key:
                         slot.record_failure(str(exc))
                         logger.warning(
@@ -416,7 +416,7 @@ class APIKeyManager:
                         )
                         continue
 
-                    # 3. Non-retryable client error (400, bad prompt, tool choice)
+                    # Non-retryable client error (400, bad prompt, tool choice)
                     else:
                         logger.error(f"Non-retryable client error: {exc}")
                         raise
@@ -439,7 +439,7 @@ class APIKeyManager:
         ) from last_error
 
 
-# ── Module-level singleton (initialized lazily) ──────────────────────────────
+# Module-level singleton (initialized lazily)
 _manager: APIKeyManager | None = None
 
 

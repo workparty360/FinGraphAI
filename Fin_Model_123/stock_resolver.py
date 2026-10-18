@@ -193,7 +193,6 @@ def normalize_text(text: str) -> str:
     """Normalize input text by removing punctuation, extra spaces, and lowercase."""
     if not text:
         return ""
-    # Replace separators with space
     t = re.sub(r"[._\-/,()'\"]+", " ", text)
     t = re.sub(r"\s+", " ", t).strip().lower()
     return t
@@ -232,7 +231,6 @@ class StockResolver:
         self.user_agent = (user_agent or os.getenv("SEC_USER_AGENT", DEFAULT_USER_AGENT)).strip()
         self._session = requests.Session()
 
-        # In-memory indexes
         self._by_ticker: dict[str, dict] = {}
         self._by_normalized_title: dict[str, dict] = {}
         self._by_stripped_title: dict[str, dict] = {}
@@ -292,11 +290,11 @@ class StockResolver:
 
     def _load_datasets(self) -> None:
         """Load bundled seed companies and cached/remote SEC EDGAR dataset."""
-        # 1. First index all bundled seeds for guaranteed availability
+        # First index all bundled seeds for guaranteed availability
         for seed in BUNDLED_SEED_COMPANIES:
             self._index_company(seed)
 
-        # 2. Check disk cache for SEC company_tickers.json
+        # Check disk cache for SEC company_tickers.json
         sec_cache_path = self.cache_dir / "company_tickers.json"
         now = time.time()
         cached_data = None
@@ -311,7 +309,7 @@ class StockResolver:
             except Exception as exc:
                 logger.warning(f"Failed to read SEC tickers cache: {exc}")
 
-        # 3. If cache missing or stale, attempt download from SEC EDGAR
+        # If cache missing or stale, attempt download from SEC EDGAR
         if cached_data is None:
             try:
                 logger.info(f"Downloading official SEC company tickers from {SEC_TICKERS_URL}...")
@@ -326,7 +324,7 @@ class StockResolver:
             except Exception as exc:
                 logger.warning(f"Unable to download SEC tickers from network: {exc}. Using bundled seed fallback.")
 
-        # 4. Index SEC EDGAR records if available
+        # Index SEC EDGAR records if available
         if cached_data and isinstance(cached_data, dict):
             for row in cached_data.values():
                 if isinstance(row, dict) and "ticker" in row and "title" in row:
@@ -362,7 +360,7 @@ class StockResolver:
         norm_q = normalize_text(raw)
         stripped_q = strip_corporate_suffixes(raw)
 
-        # 1. Exact alias match
+        # Exact alias match
         if norm_q in COMMON_ALIASES:
             target_t = COMMON_ALIASES[norm_q]
             if target_t in self._by_ticker:
@@ -371,28 +369,28 @@ class StockResolver:
                 res["confidence"] = 1.0
                 return res
 
-        # 2. Exact ticker match
+        # Exact ticker match
         if clean_upper in self._by_ticker:
             res = dict(self._by_ticker[clean_upper])
             res["match_type"] = "exact_ticker"
             res["confidence"] = 1.0
             return res
 
-        # 3. Exact normalized title match
+        # Exact normalized title match
         if norm_q in self._by_normalized_title:
             res = dict(self._by_normalized_title[norm_q])
             res["match_type"] = "exact_title"
             res["confidence"] = 0.98
             return res
 
-        # 4. Stripped corporate suffix match
+        # Stripped corporate suffix match
         if stripped_q in self._by_stripped_title:
             res = dict(self._by_stripped_title[stripped_q])
             res["match_type"] = "stripped_title"
             res["confidence"] = 0.95
             return res
 
-        # 5. Check alias on stripped name
+        # Check alias on stripped name
         if stripped_q in COMMON_ALIASES:
             target_t = COMMON_ALIASES[stripped_q]
             if target_t in self._by_ticker:
@@ -401,7 +399,7 @@ class StockResolver:
                 res["confidence"] = 0.95
                 return res
 
-        # 6. Controlled prefix or token match for unambiguous titles
+        # Controlled prefix or token match for unambiguous titles
         candidates: list[dict] = []
         for title_key, comp in self._by_stripped_title.items():
             if title_key.startswith(stripped_q) or stripped_q.startswith(title_key):
@@ -414,7 +412,7 @@ class StockResolver:
             res["confidence"] = 0.85
             return res
 
-        # 7. Controlled fuzzy match on stripped titles
+        # Controlled fuzzy match on stripped titles
         matches = difflib.get_close_matches(stripped_q, list(self._by_stripped_title.keys()), n=1, cutoff=0.88)
         if matches:
             res = dict(self._by_stripped_title[matches[0]])
@@ -464,7 +462,7 @@ class StockResolver:
         matches: list[tuple[int, dict]] = []
         seen_tickers: set[str] = set()
 
-        # 1. Multi-word phrase matching (aliases or multi-word corporate titles >= 2 words)
+        # Multi-word phrase matching (aliases or multi-word corporate titles >= 2 words)
         multi_word_phrases = sorted(
             [k for k in COMMON_ALIASES.keys() if len(k.split()) >= 2] +
             [k for k in self._by_stripped_title.keys() if len(k.split()) >= 2],
@@ -480,7 +478,7 @@ class StockResolver:
                     seen_tickers.add(comp["ticker"])
                     matches.append((m.start(), comp))
 
-        # 2. Token-level scan for known aliases or explicit uppercase tickers
+        # Token-level scan for known aliases or explicit uppercase tickers
         for m in re.finditer(r"\b[A-Za-z0-9._-]+\b", text):
             token = m.group(0)
             upper_token = token.upper()
