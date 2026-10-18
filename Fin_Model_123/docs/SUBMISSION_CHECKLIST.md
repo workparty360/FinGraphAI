@@ -21,16 +21,13 @@ Use this checklist to verify technical, documentation, and compliance readiness 
 
 ---
 
-## 2. Docker & AWS EC2 Readiness
+## 2. Local Docker Setup
 
 | Status | Verification Item | Implementation Evidence |
 |:---:|---|---|
-| [x] | **Multi-Stage Dockerfiles** | `Dockerfile`, `Dockerfile.frontend`, and `Dockerfile.backend` with non-root security. |
-| [x] | **Local Docker Compose** | `docker-compose.yml` with health checks and persistent volume `falkor_data`. |
-| [x] | **Production Docker Compose** | `docker-compose.prod.yml` with Caddy reverse proxy on ports 80/443 and internal private network. |
-| [x] | **Zero Exposed Database Ports** | Port 6379 is strictly isolated to Docker bridge network `fingraph_network`. |
-| [x] | **AWS Deployment Automation** | `deploy/aws/setup.sh`, `deploy/aws/deploy.sh`, `deploy/aws/update.sh`, `deploy/aws/backup.sh`, `deploy/aws/restore.sh`. |
-| [x] | **Deployment Documentation** | `deploy/aws/README.md` details `t3.medium`/`t3.large` sizing, security groups, and step-by-step setup. |
+| [x] | **Application Container** | `Dockerfile` runs Streamlit as a non-root user. |
+| [x] | **Local Docker Compose** | `docker-compose.yml` starts the app and FalkorDB with health checks and persistent volume `falkor_data`. |
+| [x] | **Local Access** | App and database ports bind to `127.0.0.1`. |
 
 ---
 
@@ -56,8 +53,7 @@ Use this checklist to verify technical, documentation, and compliance readiness 
 
 | Status | Check Item | Status Detail |
 |:---:|---|---|
-| [x] | **No Real API Keys Committed** | `.env` is listed in `.gitignore` and `.dockerignore`. `.env.example` contains placeholders only. |
-| [x] | **No Hardcoded AWS Credentials** | Scripts accept system environment variables and do not hardcode IAM secrets. |
+| [x] | **No Real API Keys Committed** | `.env` is listed in `.gitignore` and `.dockerignore`. Set local configuration in an untracked `.env` file. |
 | [x] | **No Unrestricted Cypher Execution** | All graph operations use parameterized allowlisted queries in `financial_graph.py`. |
 | [x] | **Non-Root Container Execution** | `appuser` (UID 1000) configured in Dockerfile. |
 
@@ -67,5 +63,4 @@ Use this checklist to verify technical, documentation, and compliance readiness 
 
 - [ ] **Public GitHub Repository:** Ensure repo is set to Public on GitHub.
 - [ ] **Demo Video Recording:** Record 3-to-5 minute video following `docs/DEMO_SCRIPT.md`.
-- [ ] **Live EC2 URL (Optional/Bonus):** Deploy on EC2 using `./deploy/aws/deploy.sh` and note public domain.
-- [ ] **Participant Review:** Review `README.md` and `HACKATHON_COMPLIANCE.md` before final form submission.
+- [ ] **Participant Review:** Review `README.md` before final form submission.

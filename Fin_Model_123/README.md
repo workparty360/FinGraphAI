@@ -4,7 +4,7 @@
 > **Primary Track:** *Agents That Act on Connected Data*  
 > **Secondary Track:** *Agent Memory and Coordination*  
 > **FalkorDB Integration:** Primary Graph Database (Connected Financial Knowledge Graph & Multi-Hop Reasoning)  
-> **Deployment:** AWS EC2 Ubuntu Virtual Machine via Docker Compose + Caddy Automatic HTTPS
+> **Run locally:** Streamlit with FalkorDB, directly or through Docker Compose
 
 ---
 
@@ -28,46 +28,23 @@ Removing FalkorDB renders the core financial intelligence features completely in
 * **Key Reliability:** 3-Slot Configurable Key Manager with automatic sequential failover (`AI_API_KEY_1` ➔ `AI_API_KEY_2` ➔ `AI_API_KEY_3`)
 * **Frontend UI:** Streamlit (Custom responsive theme, zero-sidebar top navigation, TradingView-style Altair interactive crosshair charting)
 * **Market Data:** Public Yahoo Finance API (real-time & historical price inspection, no paid scrapers)
-* **Reverse Proxy & TLS:** Caddy 2 (Automatic Let's Encrypt / ZeroSSL HTTPS certificates, WebSocket proxying, security headers)
-* **Containerization:** Docker Engine & Docker Compose (Multi-stage builds, non-root user execution, private network isolation)
-* **Cloud Infrastructure:** AWS EC2 (`t3.medium` / `t3.large` on Ubuntu Server 24.04 LTS)
+* **Containerization:** Docker and Docker Compose for the app and FalkorDB
 
 ---
 
 ## 3. System Architecture
 
+```text
+Browser (localhost:8501)
+  -> Streamlit dashboard and AI chat
+     -> Yahoo Finance market data
+     -> LangGraph agents and Groq inference
+     -> FalkorDB (localhost:6379, or the Compose service)
+        -> Financial knowledge, conversation memory, service diagnostics
 ```
-                                  [ HTTPS / Browser Clients ]
-                                               |
-                                     (Port 443 / Port 80)
-    ================================ AWS EC2 VIRTUAL MACHINE ================================
-    |                                                                                      |
-    |   +------------------------------------------------------------------------------+   |
-    |   |                        Caddy Reverse Proxy (Alpine)                          |   |
-    |   |           Automatic TLS (Let's Encrypt) · Security Headers · WebSocket       |   |
-    |   +------------------------------------------------------------------------------+   |
-    |                                          |                                           |
-    |                      Docker Private Bridge Network (fingraph_network)                |
-    |                                          |                                           |
-    |   +--------------------------------------+---------------------------------------+   |
-    |   |                                                                              |   |
-    |   v                                                                              v   |
-    | +-----------------------------------------------+   +------------------------------+ |
-    | |           FinGraph AI App (Port 8501)         |   |    FalkorDB Engine (Port 6379| |
-    | |  - Top Nav: /dashboard and /chat (No Sidebar) |   |    Private / No Host Ports)  | |
-    | |  - Altair Interactive Price Crosshair Chart   |   |                              | |
-    | |  - LangGraph Multi-Agent Financial Team       |   |  Graphs:                     | |
-    | |    * Researcher ➔ Analyst ➔ Memory Curator    |   |  1. financial_knowledge      | |
-    | |  - 3-Key API Failover Engine                  |   |     (Companies, Metrics,     | |
-    | |  - FalkorDB Graph Evidence Inspector          |   |      Observations, Docs)     | |
-    | |  - Service Dependency Failure Diagnostics     |   |  2. service_dependencies     | |
-    | +-----------------------------------------------+   |  3. tenant conversation memory| |
-    |                                                     +------------------------------+ |
-    |                                                                    |                 |
-    |                                                                    v                 |
-    |                                                   Persistent Disk Volume (falkor_data)|
-    ========================================================================================
-```
+
+The application runs as a single Streamlit service. The local Docker Compose
+configuration starts this service and FalkorDB with a persistent database volume.
 
 ---
 
@@ -138,7 +115,7 @@ RETURN c.ticker, c.name, s.name, o.fiscal_year, o.value, o.currency,
 ORDER BY o.value DESC
 ```
 
-*(See [docs/CYPHER_QUERIES.md](file:///home/daksh/Desktop/take3/Fin_Model_FalkorDB_Memory_Fixed/Fin_Model_123/docs/CYPHER_QUERIES.md) for complete query catalog and execution plans).*
+*(See [docs/CYPHER_QUERIES.md](docs/CYPHER_QUERIES.md) for complete query catalog and execution plans).*
 
 ---
 
@@ -161,10 +138,28 @@ In strict adherence to Hackathon Rule 6, FinGraph AI utilizes **only verified, p
 
 ### Step 1: Clone and Configure Environment
 ```bash
-git clone https://github.com/your-username/FinGraph-AI.git
-cd FinGraph-AI/Fin_Model_123
-cp .env.example .env
-nano .env # Insert your AI_API_KEY_1
+git clone https://github.com/workparty360/FinGraphAI.git
+cd FinGraphAI/Fin_Model_123
+nano .env
+```
+
+Set your own values in `.env` (keep this file private):
+
+```dotenv
+AI_API_KEY_1=your_groq_api_key
+FALKORDB_HOST=localhost
+FALKORDB_PORT=6379
+```
+
+### Run directly with Python
+
+With FalkorDB running at the host and port configured in `.env`:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+bash run.sh
 ```
 
 ### Step 2: Launch via Docker Compose
@@ -184,31 +179,7 @@ Navigate to `http://localhost:8501`.
 
 ---
 
-## 9. AWS EC2 Production Deployment
-
-FinGraph AI includes automated production deployment scripts located in `deploy/aws/`:
-
-```bash
-# 1. Connect to EC2 Ubuntu 24.04 instance
-ssh -i /path/to/key.pem ubuntu@<EC2_PUBLIC_IP>
-
-# 2. Clone repo and run host setup
-git clone https://github.com/your-username/FinGraph-AI.git
-cd FinGraph-AI/Fin_Model_123
-sudo ./deploy/aws/setup.sh
-newgrp docker
-
-# 3. Configure .env with domain and AI keys
-cp .env.example .env && nano .env
-
-# 4. Deploy production stack (FalkorDB + App + Caddy TLS)
-./deploy/aws/deploy.sh
-```
-*(See [deploy/aws/README.md](file:///home/daksh/Desktop/take3/Fin_Model_FalkorDB_Memory_Fixed/Fin_Model_123/deploy/aws/README.md) for EC2 sizing, security group rules, and zero-downtime updates).*
-
----
-
-## 10. Automated Test Suite (96 / 96 Tests Passed)
+## 9. Automated Test Suite
 
 FinGraph AI maintains a comprehensive automated test suite verifying graph integrity, multi-agent tool calling, fault tolerance, and API failover:
 
@@ -226,23 +197,23 @@ PYTHONPATH=. .venv/bin/pytest tests/ -v
 
 ---
 
-## 11. AI Assistance Disclosure
+## 10. AI Assistance Disclosure
 
 In full compliance with Hackathon Rule 11, the development of FinGraph AI utilized **Google Antigravity** as an AI pair-programming assistant for code refactoring, test generation, and documentation drafting. All architectural decisions, graph data schemas, Cypher query constraints, and verification procedures were directed, reviewed, and validated by the author.
 
 ---
 
-## 12. Human Contributions & Verification
+## 11. Human Contributions & Verification
 
 * **System Design & Graph Modeling:** Designed the 8-node, 8-relationship financial knowledge graph connecting companies, observations, periods, and official source documents.
 * **Hard Dependency Architecture:** Ensured that FalkorDB is strictly required for financial intelligence rather than an optional layer.
-* **Production Engineering:** Created multi-stage Dockerfiles, private bridge network isolation, and automated Caddy reverse proxy orchestration for AWS EC2.
+* **Local Containers:** Configured the application and FalkorDB with health checks and persistent database storage.
 * **Testing & Quality Assurance:** Authored automated test scenarios validating failure states, multi-key failover, and graph provenance paths.
 
-*(See [docs/SUBMISSION_CHECKLIST.md](file:///home/daksh/Desktop/take3/Fin_Model_FalkorDB_Memory_Fixed/Fin_Model_123/docs/SUBMISSION_CHECKLIST.md) and [HACKATHON_COMPLIANCE.md](file:///home/daksh/Desktop/take3/Fin_Model_FalkorDB_Memory_Fixed/Fin_Model_123/HACKATHON_COMPLIANCE.md) for full compliance verification).*
+*(See [docs/SUBMISSION_CHECKLIST.md](docs/SUBMISSION_CHECKLIST.md) for full compliance verification).*
 
 ---
 
-## 13. License
+## 12. License
 
 FinGraph AI is released under the [MIT License](LICENSE). Source filings cited in the knowledge graph are public records from the U.S. Securities and Exchange Commission (SEC) and the Bombay Stock Exchange (BSE India).

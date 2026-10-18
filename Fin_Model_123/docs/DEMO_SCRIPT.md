@@ -79,11 +79,11 @@ This document provides a structured, 10-part walkthrough for recording the 3-to-
 
 ---
 
-## Part 9: AWS EC2 & Production Architecture (3:50 - 4:15)
-* **Visual:** Show browser pointing to the live HTTPS domain or EC2 console, and show `docker compose -f docker-compose.prod.yml ps`.
+## Part 9: Local Docker Setup (3:50 - 4:15)
+* **Visual:** Open `http://localhost:8501` and show `docker compose ps`.
 * **Speaker Script:**
-  > "For production deployment, FinGraph AI is orchestrated via Docker Compose with a Caddy reverse proxy on an AWS EC2 Ubuntu instance.
-  > Caddy handles automatic TLS certificates and WebSocket proxying, while FalkorDB is shielded inside a private Docker bridge network with no public ports exposed."
+  > "Docker Compose runs the Streamlit app and FalkorDB locally.
+  > Both services use health checks, and FalkorDB stores its data in a persistent volume."
 
 ---
 
@@ -93,6 +93,6 @@ This document provides a structured, 10-part walkthrough for recording the 3-to-
   > "In summary, FinGraph AI demonstrates how FalkorDB transforms financial intelligence:
   > 1. Essential graph traversal for cross-company comparison and peer discovery.
   > 2. Verifiable provenance tracing back to official SEC and BSE filings.
-  > 3. Zero-downtime, fully containerized AWS EC2 deployment.
+  > 3. Local Docker Compose setup with persistent graph storage.
   > 4. 100% test pass rate across 96 automated tests.
   > Thank you for reviewing FinGraph AI!"

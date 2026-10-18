@@ -18,6 +18,3 @@ htmlcov/
 .DS_Store
 falkor_data/
 backups/
-deploy/aws/*.pem
-deploy/aws/*.key
-deploy/aws/*.id_rsa
