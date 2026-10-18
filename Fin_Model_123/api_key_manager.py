@@ -1,13 +1,5 @@
-"""Three-slot AI API key manager with organization-aware quota handling and model fallback.
+"""Manage API key cooldowns, shared organization quotas, and model fallback."""
 
-Distinguishes between:
-1. KEY-SPECIFIC FAILURES (e.g. 401 Invalid Key, revoked credential):
-   Fails over to the next configured API key slot.
-2. ORGANIZATION-LEVEL FAILURES (e.g. 429 TPD token quota exhausted):
-   DOES NOT rotate keys within the same organization (they share the same quota).
-   Triggers intelligent Model Fallback (e.g. gpt-oss-120b ➔ gpt-oss-20b).
-   Respects Retry-After limits.
-"""
 from __future__ import annotations
 
 import logging
@@ -27,20 +19,38 @@ _KEY_COOLDOWN = int(os.getenv("API_KEY_COOLDOWN_SECS", "60"))
 
 # Keywords indicating organization-wide daily limits (shared across keys in same org)
 ORG_QUOTA_KEYWORDS = (
-    "tokens per day", "tpd", "daily limit", "requests per day", "rpd",
-    "organization quota", "org_rate_limit", "exceeded daily limit",
+    "tokens per day",
+    "tpd",
+    "daily limit",
+    "requests per day",
+    "rpd",
+    "organization quota",
+    "org_rate_limit",
+    "exceeded daily limit",
 )
 
 # Key-specific failure patterns (another key credential may fix this)
 KEY_SPECIFIC_PATTERNS = (
-    "401", "invalid_api_key", "invalid api key", "unauthorized",
-    "authentication failed", "revoked", "forbidden for key",
+    "401",
+    "invalid_api_key",
+    "invalid api key",
+    "unauthorized",
+    "authentication failed",
+    "revoked",
+    "forbidden for key",
 )
 
 # Transient gateway/network patterns
 TRANSIENT_PATTERNS = (
-    "502", "503", "504", "timeout", "timed out", "overloaded",
-    "service unavailable", "connection error", "connection reset",
+    "502",
+    "503",
+    "504",
+    "timeout",
+    "timed out",
+    "overloaded",
+    "service unavailable",
+    "connection error",
+    "connection reset",
 )
 
 
@@ -67,21 +77,21 @@ class QuotaClassification:
 def parse_retry_after(error_str: str) -> float:
     """Extract retry-after wait duration in seconds from error text or headers."""
     # Look for "in XmYs" or "in Xs" or "X minutes"
-    m_min = re.search(r"(\d+)\s*(?:m|minutes?)", error_str, re.IGNORECASE)
-    m_sec = re.search(r"(\d+)\s*(?:s|seconds?)", error_str, re.IGNORECASE)
+    minutes_match = re.search(r"(\d+)\s*(?:m|minutes?)", error_str, re.IGNORECASE)
+    seconds_match = re.search(r"(\d+)\s*(?:s|seconds?)", error_str, re.IGNORECASE)
     seconds = 0.0
-    if m_min:
-        seconds += float(m_min.group(1)) * 60.0
-    if m_sec:
-        seconds += float(m_sec.group(1))
+    if minutes_match:
+        seconds += float(minutes_match.group(1)) * 60.0
+    if seconds_match:
+        seconds += float(seconds_match.group(1))
 
     if seconds > 0:
         return seconds
 
     # Check for direct seconds like "try again in 1800"
-    m_num = re.search(r"try again in (\d+)", error_str, re.IGNORECASE)
-    if m_num:
-        return float(m_num.group(1))
+    retry_match = re.search(r"try again in (\d+)", error_str, re.IGNORECASE)
+    if retry_match:
+        return float(retry_match.group(1))
 
     # Default fallback: 30 minutes for daily limits, 60s for generic 429
     if any(k in error_str.lower() for k in ORG_QUOTA_KEYWORDS):
@@ -173,9 +183,7 @@ class ModelQuotaTracker:
     def record_rate_limit(self, model: str, retry_after: float, error: str) -> None:
         self._cooldowns[model] = time.time() + retry_after
         self._last_errors[model] = error
-        logger.warning(
-            f"Model '{model}' in cooldown for {retry_after:.0f}s due to: {error[:120]}"
-        )
+        logger.warning(f"Model '{model}' in cooldown for {retry_after:.0f}s due to: {error[:120]}")
 
     def get_retry_after(self, model: str) -> float:
         until = self._cooldowns.get(model, 0.0)
@@ -201,9 +209,9 @@ class APIKeySlot:
     """Represents one configured API key slot."""
 
     def __init__(self, slot_id: str, key: str):
-        self.slot_id = slot_id            # "key-1", "key-2", "key-3"
-        self._key = key                   # raw key — NEVER exposed to logs or UI
-        self.status: str = "healthy"      # healthy | cooling_down
+        self.slot_id = slot_id  # "key-1", "key-2", "key-3"
+        self._key = key  # raw key — NEVER exposed to logs or UI
+        self.status: str = "healthy"  # healthy | cooling_down
         self._failure_ts: float = 0.0
         self._failure_count: int = 0
         self._last_error: str | None = None
@@ -227,9 +235,7 @@ class APIKeySlot:
         self._failure_count += 1
         self._last_error = error
         self.status = "cooling_down"
-        logger.warning(
-            f"APIKeySlot {self.slot_id}: failure #{self._failure_count} — {error[:120]}"
-        )
+        logger.warning(f"APIKeySlot {self.slot_id}: failure #{self._failure_count} — {error[:120]}")
 
     def record_success(self) -> None:
         self._failure_count = 0
@@ -246,6 +252,7 @@ class APIKeySlot:
 
 class AllAPIKeysExhaustedError(RuntimeError):
     """Raised when all configured AI API key slots have failed or are cooling down."""
+
     pass
 
 
@@ -298,8 +305,8 @@ class APIKeyManager:
 
     @property
     def active_slot(self) -> str | None:
-        avail = self.available_slots()
-        return avail[0].slot_id if avail else None
+        available_slots = self.available_slots()
+        return available_slots[0].slot_id if available_slots else None
 
     def available_slots(self) -> list[APIKeySlot]:
         return [s for s in self._slots if s.is_available()]
@@ -315,13 +322,16 @@ class APIKeyManager:
         if _model_tracker.is_available(primary):
             return primary
         if fallback and _model_tracker.is_available(fallback):
-            logger.info(f"Primary model '{primary}' is cooling down. Routing to fallback model '{fallback}'.")
+            logger.info(
+                f"Primary model '{primary}' is cooling down. Routing to fallback model '{fallback}'."
+            )
             return fallback
         return primary
 
     def make_llm(self, model: str | None = None) -> tuple[Any, APIKeySlot]:
         """Return a (ChatGroq, APIKeySlot) using the best available key and active model."""
         from langchain_groq import ChatGroq
+
         target_model = model or self.get_preferred_model()
         for slot in self._slots:
             if slot.is_available():
@@ -347,7 +357,9 @@ class APIKeyManager:
         """
         from langchain_groq import ChatGroq
 
-        primary_target = model or os.getenv("GROQ_PRIMARY_MODEL", os.getenv("GROQ_MODEL", PRIMARY_MODEL))
+        primary_target = model or os.getenv(
+            "GROQ_PRIMARY_MODEL", os.getenv("GROQ_MODEL", PRIMARY_MODEL)
+        )
         fallback_target = os.getenv("GROQ_FALLBACK_MODEL", FALLBACK_MODEL)
 
         # Candidates to try: primary first, then fallback if distinct
@@ -361,7 +373,9 @@ class APIKeyManager:
             # Check if this model is in cooldown
             if not _model_tracker.is_available(cur_model):
                 wait_time = _model_tracker.get_retry_after(cur_model)
-                logger.info(f"Model '{cur_model}' is in cooldown ({wait_time:.0f}s remaining), skipping.")
+                logger.info(
+                    f"Model '{cur_model}' is in cooldown ({wait_time:.0f}s remaining), skipping."
+                )
                 continue
 
             # Iterate over available key slots
@@ -424,10 +438,10 @@ class APIKeyManager:
         # If we got here due to an organization daily quota exhaustion
         if last_error and classify_error(last_error).is_org_quota:
             c = classify_error(last_error)
-            mins = max(1, int(c.retry_after_secs / 60))
+            minutes = max(1, int(c.retry_after_secs / 60))
             raise OrganizationQuotaExhaustedError(
                 f"The AI model quota for your organization has reached its daily limit (TPD). "
-                f"Please retry after approximately {mins} minutes. "
+                f"Please retry after approximately {minutes} minutes. "
                 f"Your conversation and verified data are preserved.",
                 retry_after_secs=c.retry_after_secs,
                 model=primary_target,

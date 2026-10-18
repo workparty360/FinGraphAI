@@ -11,20 +11,23 @@ load_dotenv(".env")
 from execution_tracer import get_traces_for_request
 from falkor_memory import FalkorMemory
 
+
 class DummyEmbeddings:
     def embed_query(self, text: str):
         return [0.0] * 384
+
+
 from financial_graph import get_financial_graph
 from memory_agents import FinanceAgentTeam
 
-fkg = get_financial_graph()
-print(f"FalkorDB available: {fkg.is_available}")
+financial_graph = get_financial_graph()
+print(f"FalkorDB available: {financial_graph.is_available}")
 
 memory = FalkorMemory(
     "live_test_ws",
     "live_test_user",
     DummyEmbeddings(),
-    graph=fkg._graph if fkg.is_available else None,
+    graph=financial_graph._graph if financial_graph.is_available else None,
 )
 team = FinanceAgentTeam(memory=memory)
 
@@ -37,8 +40,8 @@ res1 = team.ask("What is return on equity?", thread_id="thread_general")
 print("Answer:\n", res1.get("answer"))
 t1 = get_traces_for_request(res1.get("request_id", ""))
 print(f"\nTraces recorded for TEST 1: {len(t1)}")
-for tr in t1:
-    print(f"  [{tr['stage']}] {tr['agent_name']} status={tr['status']}")
+for trace in t1:
+    print(f"  [{trace['stage']}] {trace['agent_name']} status={trace['status']}")
 
 print("\n" + "=" * 60)
 print("TEST 2: Exact Net Income: What was Apple's net income in fiscal 2023?")
@@ -47,8 +50,8 @@ res2 = team.ask("What was Apple's net income in fiscal 2023?", thread_id=thread_
 print("Answer:\n", res2.get("answer"))
 t2 = get_traces_for_request(res2.get("request_id", ""))
 print(f"\nTraces recorded for TEST 2: {len(t2)}")
-for tr in t2:
-    print(f"  [{tr['stage']}] {tr['agent_name']} status={tr['status']}")
+for trace in t2:
+    print(f"  [{trace['stage']}] {trace['agent_name']} status={trace['status']}")
 
 print("\n" + "=" * 60)
 print("TEST 3: Best Year: Which year was Apple's best performing year?")

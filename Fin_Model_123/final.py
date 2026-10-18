@@ -18,7 +18,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# Completely remove sidebar space and controls from the DOM
+# Hide the sidebar for the tab-based layout.
 st.markdown(
     """
     <style>
@@ -39,7 +39,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Workspace and internal identity (no username displayed in the UI)
+# Use configured identities for conversation storage.
 tenant_id = os.getenv("WORKSPACE_TENANT_ID", "hackathon-demo")
 user_id = os.getenv("DEFAULT_USER_ID", "demo-user")
 
@@ -51,7 +51,7 @@ def get_embeddings():
 
 embedding_model = get_embeddings()
 
-# Top Navigation: FinGraph AI | Dashboard | AI Chat
+# Dashboard and chat share the same embedding model.
 col_brand, _ = st.columns([4, 6])
 with col_brand:
     st.markdown("## 📈 **FinGraph AI** `FalkorDB`")
@@ -64,4 +64,3 @@ with tab_dashboard:
 
 with tab_chat:
     render_standalone_chat_page(tenant_id, user_id, embedding_model)
-

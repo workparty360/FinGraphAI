@@ -1,11 +1,5 @@
-"""
-Authoritative Stock and Company Resolver with SEC EDGAR Integration and FalkorDB Caching.
+"""Resolve company names and tickers using bundled data, SEC records, and local caches."""
 
-Provides authoritative resolution of company names, aliases, and ticker symbols
-using official SEC EDGAR company tickers dataset and seeded reference data.
-Supports multi-company extraction, Indian stock coverage demarcation,
-SEC XBRL financial facts retrieval with disk caching, and FalkorDB upsertion.
-"""
 from __future__ import annotations
 
 import difflib
@@ -33,73 +27,508 @@ DEFAULT_USER_AGENT = "FinGraphAI/1.0 (admin@fingraph.ai)"
 CACHE_DIR = Path(os.getenv("FINMODEL_CACHE_DIR", "/tmp/finmodel_sec_cache"))
 SEC_TICKERS_CACHE_FILE = CACHE_DIR / "company_tickers.json"
 SEC_TICKERS_TTL_SECONDS = int(os.getenv("SEC_TICKERS_TTL", "86400"))  # 24 hours
-SEC_FACTS_TTL_SECONDS = int(os.getenv("SEC_FACTS_TTL", "604800"))     # 7 days
+SEC_FACTS_TTL_SECONDS = int(os.getenv("SEC_FACTS_TTL", "604800"))  # 7 days
 
 STOP_WORDS = {
-    "A", "I", "FOR", "AND", "OR", "IT", "IN", "ON", "AT", "TO", "BY", "BE", "DO",
-    "AN", "SO", "NO", "UP", "MY", "ME", "HE", "WE", "IS", "AS", "IF", "OF", "US",
-    "AM", "ALL", "ARE", "OUT", "CAN", "HAS", "HAD", "WAS", "NEW", "NOW", "ONE",
-    "TWO", "SEE", "TOP", "LOW", "BIG", "DAY", "NET", "PER", "BUY", "RUN", "PAY",
-    "SET", "GET", "TAX", "EPS", "PE", "PB", "ROE", "ROA", "CAGR", "FCF", "EBITDA",
-    "EBIT", "CEO", "CFO", "SEC", "USD", "INR", "FY", "VS", "THE", "HOW", "WHAT",
-    "WHICH", "COMPARE", "BETWEEN", "BEST", "WORST", "YEAR", "YEARS", "PERFORMANCE",
-    "PROFIT", "REVENUE", "GROWTH", "MARGIN", "CASH", "FLOW", "STOCK", "STOCKS",
-    "COMPANY", "COMPANIES", "DID", "TELL", "SHOW", "ABOUT", "WITH", "FROM", "OVER",
-    "HIGH", "RATE", "DATA", "FREE", "TOTAL", "REAL", "GOOD", "MUCH", "MORE", "LESS",
-    "NMS", "NASDAQ", "NYSE", "NSE", "BSE", "EDGAR", "GAAP", "Q1", "Q2", "Q3", "Q4", "ANNUAL",
+    "A",
+    "I",
+    "FOR",
+    "AND",
+    "OR",
+    "IT",
+    "IN",
+    "ON",
+    "AT",
+    "TO",
+    "BY",
+    "BE",
+    "DO",
+    "AN",
+    "SO",
+    "NO",
+    "UP",
+    "MY",
+    "ME",
+    "HE",
+    "WE",
+    "IS",
+    "AS",
+    "IF",
+    "OF",
+    "US",
+    "AM",
+    "ALL",
+    "ARE",
+    "OUT",
+    "CAN",
+    "HAS",
+    "HAD",
+    "WAS",
+    "NEW",
+    "NOW",
+    "ONE",
+    "TWO",
+    "SEE",
+    "TOP",
+    "LOW",
+    "BIG",
+    "DAY",
+    "NET",
+    "PER",
+    "BUY",
+    "RUN",
+    "PAY",
+    "SET",
+    "GET",
+    "TAX",
+    "EPS",
+    "PE",
+    "PB",
+    "ROE",
+    "ROA",
+    "CAGR",
+    "FCF",
+    "EBITDA",
+    "EBIT",
+    "CEO",
+    "CFO",
+    "SEC",
+    "USD",
+    "INR",
+    "FY",
+    "VS",
+    "THE",
+    "HOW",
+    "WHAT",
+    "WHICH",
+    "COMPARE",
+    "BETWEEN",
+    "BEST",
+    "WORST",
+    "YEAR",
+    "YEARS",
+    "PERFORMANCE",
+    "PROFIT",
+    "REVENUE",
+    "GROWTH",
+    "MARGIN",
+    "CASH",
+    "FLOW",
+    "STOCK",
+    "STOCKS",
+    "COMPANY",
+    "COMPANIES",
+    "DID",
+    "TELL",
+    "SHOW",
+    "ABOUT",
+    "WITH",
+    "FROM",
+    "OVER",
+    "HIGH",
+    "RATE",
+    "DATA",
+    "FREE",
+    "TOTAL",
+    "REAL",
+    "GOOD",
+    "MUCH",
+    "MORE",
+    "LESS",
+    "NMS",
+    "NASDAQ",
+    "NYSE",
+    "NSE",
+    "BSE",
+    "EDGAR",
+    "GAAP",
+    "Q1",
+    "Q2",
+    "Q3",
+    "Q4",
+    "ANNUAL",
 }
 
 CORPORATE_SUFFIXES = {
-    "inc", "incorporated", "corp", "corporation", "co", "company", "ltd", "limited",
-    "llc", "plc", "holdings", "holding", "technologies", "technology", "platforms",
-    "group", "enterprises", "solutions", "international", "services", "industries",
+    "inc",
+    "incorporated",
+    "corp",
+    "corporation",
+    "co",
+    "company",
+    "ltd",
+    "limited",
+    "llc",
+    "plc",
+    "holdings",
+    "holding",
+    "technologies",
+    "technology",
+    "platforms",
+    "group",
+    "enterprises",
+    "solutions",
+    "international",
+    "services",
+    "industries",
 }
 
 # Seed dataset of major US and Indian equities for instantaneous zero-latency lookups
 # and guaranteed resilience during offline testing or external API disruptions.
 BUNDLED_SEED_COMPANIES = [
     # US Mega-Cap & Technology
-    {"ticker": "AAPL", "title": "Apple Inc.", "cik_str": 320193, "exchange": "NASDAQ", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "MSFT", "title": "Microsoft Corporation", "cik_str": 789019, "exchange": "NASDAQ", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "NVDA", "title": "NVIDIA Corporation", "cik_str": 1045810, "exchange": "NASDAQ", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "AMD", "title": "Advanced Micro Devices, Inc.", "cik_str": 2488, "exchange": "NASDAQ", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "TSLA", "title": "Tesla, Inc.", "cik_str": 1318605, "exchange": "NASDAQ", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "AMZN", "title": "Amazon.com, Inc.", "cik_str": 1018724, "exchange": "NASDAQ", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "GOOGL", "title": "Alphabet Inc.", "cik_str": 1652044, "exchange": "NASDAQ", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "GOOG", "title": "Alphabet Inc.", "cik_str": 1652044, "exchange": "NASDAQ", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "META", "title": "Meta Platforms, Inc.", "cik_str": 1326801, "exchange": "NASDAQ", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "INTC", "title": "Intel Corporation", "cik_str": 50863, "exchange": "NASDAQ", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "NFLX", "title": "Netflix, Inc.", "cik_str": 1065280, "exchange": "NASDAQ", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "BRK.A", "title": "Berkshire Hathaway Inc.", "cik_str": 1067983, "exchange": "NYSE", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "BRK.B", "title": "Berkshire Hathaway Inc.", "cik_str": 1067983, "exchange": "NYSE", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "JPM", "title": "JPMorgan Chase & Co.", "cik_str": 19617, "exchange": "NYSE", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "V", "title": "Visa Inc.", "cik_str": 1403161, "exchange": "NYSE", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "MA", "title": "Mastercard Incorporated", "cik_str": 1141391, "exchange": "NYSE", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "WMT", "title": "Walmart Inc.", "cik_str": 104169, "exchange": "NYSE", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "DIS", "title": "The Walt Disney Company", "cik_str": 1744489, "exchange": "NYSE", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "ORCL", "title": "Oracle Corporation", "cik_str": 1341439, "exchange": "NYSE", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "CSCO", "title": "Cisco Systems, Inc.", "cik_str": 858877, "exchange": "NASDAQ", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "ADBE", "title": "Adobe Inc.", "cik_str": 796343, "exchange": "NASDAQ", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "CRM", "title": "Salesforce, Inc.", "cik_str": 1108524, "exchange": "NYSE", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "QCOM", "title": "QUALCOMM Incorporated", "cik_str": 804328, "exchange": "NASDAQ", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "TXN", "title": "Texas Instruments Incorporated", "cik_str": 97476, "exchange": "NASDAQ", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "AVGO", "title": "Broadcom Inc.", "cik_str": 1730168, "exchange": "NASDAQ", "country": "USA", "currency": "USD", "sec_supported": True},
-    {"ticker": "COST", "title": "Costco Wholesale Corporation", "cik_str": 909832, "exchange": "NASDAQ", "country": "USA", "currency": "USD", "sec_supported": True},
-
+    {
+        "ticker": "AAPL",
+        "title": "Apple Inc.",
+        "cik_str": 320193,
+        "exchange": "NASDAQ",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "MSFT",
+        "title": "Microsoft Corporation",
+        "cik_str": 789019,
+        "exchange": "NASDAQ",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "NVDA",
+        "title": "NVIDIA Corporation",
+        "cik_str": 1045810,
+        "exchange": "NASDAQ",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "AMD",
+        "title": "Advanced Micro Devices, Inc.",
+        "cik_str": 2488,
+        "exchange": "NASDAQ",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "TSLA",
+        "title": "Tesla, Inc.",
+        "cik_str": 1318605,
+        "exchange": "NASDAQ",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "AMZN",
+        "title": "Amazon.com, Inc.",
+        "cik_str": 1018724,
+        "exchange": "NASDAQ",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "GOOGL",
+        "title": "Alphabet Inc.",
+        "cik_str": 1652044,
+        "exchange": "NASDAQ",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "GOOG",
+        "title": "Alphabet Inc.",
+        "cik_str": 1652044,
+        "exchange": "NASDAQ",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "META",
+        "title": "Meta Platforms, Inc.",
+        "cik_str": 1326801,
+        "exchange": "NASDAQ",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "INTC",
+        "title": "Intel Corporation",
+        "cik_str": 50863,
+        "exchange": "NASDAQ",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "NFLX",
+        "title": "Netflix, Inc.",
+        "cik_str": 1065280,
+        "exchange": "NASDAQ",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "BRK.A",
+        "title": "Berkshire Hathaway Inc.",
+        "cik_str": 1067983,
+        "exchange": "NYSE",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "BRK.B",
+        "title": "Berkshire Hathaway Inc.",
+        "cik_str": 1067983,
+        "exchange": "NYSE",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "JPM",
+        "title": "JPMorgan Chase & Co.",
+        "cik_str": 19617,
+        "exchange": "NYSE",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "V",
+        "title": "Visa Inc.",
+        "cik_str": 1403161,
+        "exchange": "NYSE",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "MA",
+        "title": "Mastercard Incorporated",
+        "cik_str": 1141391,
+        "exchange": "NYSE",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "WMT",
+        "title": "Walmart Inc.",
+        "cik_str": 104169,
+        "exchange": "NYSE",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "DIS",
+        "title": "The Walt Disney Company",
+        "cik_str": 1744489,
+        "exchange": "NYSE",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "ORCL",
+        "title": "Oracle Corporation",
+        "cik_str": 1341439,
+        "exchange": "NYSE",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "CSCO",
+        "title": "Cisco Systems, Inc.",
+        "cik_str": 858877,
+        "exchange": "NASDAQ",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "ADBE",
+        "title": "Adobe Inc.",
+        "cik_str": 796343,
+        "exchange": "NASDAQ",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "CRM",
+        "title": "Salesforce, Inc.",
+        "cik_str": 1108524,
+        "exchange": "NYSE",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "QCOM",
+        "title": "QUALCOMM Incorporated",
+        "cik_str": 804328,
+        "exchange": "NASDAQ",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "TXN",
+        "title": "Texas Instruments Incorporated",
+        "cik_str": 97476,
+        "exchange": "NASDAQ",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "AVGO",
+        "title": "Broadcom Inc.",
+        "cik_str": 1730168,
+        "exchange": "NASDAQ",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
+    {
+        "ticker": "COST",
+        "title": "Costco Wholesale Corporation",
+        "cik_str": 909832,
+        "exchange": "NASDAQ",
+        "country": "USA",
+        "currency": "USD",
+        "sec_supported": True,
+    },
     # Indian NSE Equities (Identified, with explicit non-SEC coverage indicator)
-    {"ticker": "RELIANCE.NS", "title": "Reliance Industries Limited", "cik_str": None, "exchange": "NSE", "country": "IND", "currency": "INR", "sec_supported": False},
-    {"ticker": "TCS.NS", "title": "Tata Consultancy Services Limited", "cik_str": None, "exchange": "NSE", "country": "IND", "currency": "INR", "sec_supported": False},
-    {"ticker": "INFY.NS", "title": "Infosys Limited", "cik_str": None, "exchange": "NSE", "country": "IND", "currency": "INR", "sec_supported": False},
-    {"ticker": "HDFCBANK.NS", "title": "HDFC Bank Limited", "cik_str": None, "exchange": "NSE", "country": "IND", "currency": "INR", "sec_supported": False},
-    {"ticker": "ICICIBANK.NS", "title": "ICICI Bank Limited", "cik_str": None, "exchange": "NSE", "country": "IND", "currency": "INR", "sec_supported": False},
-    {"ticker": "SBIN.NS", "title": "State Bank of India", "cik_str": None, "exchange": "NSE", "country": "IND", "currency": "INR", "sec_supported": False},
-    {"ticker": "BHARTIARTL.NS", "title": "Bharti Airtel Limited", "cik_str": None, "exchange": "NSE", "country": "IND", "currency": "INR", "sec_supported": False},
-    {"ticker": "ITC.NS", "title": "ITC Limited", "cik_str": None, "exchange": "NSE", "country": "IND", "currency": "INR", "sec_supported": False},
-    {"ticker": "LT.NS", "title": "Larsen & Toubro Limited", "cik_str": None, "exchange": "NSE", "country": "IND", "currency": "INR", "sec_supported": False},
-    {"ticker": "WIPRO.NS", "title": "Wipro Limited", "cik_str": None, "exchange": "NSE", "country": "IND", "currency": "INR", "sec_supported": False},
-    {"ticker": "TATAMOTORS.NS", "title": "Tata Motors Limited", "cik_str": None, "exchange": "NSE", "country": "IND", "currency": "INR", "sec_supported": False},
-    {"ticker": "KOTAKBANK.NS", "title": "Kotak Mahindra Bank Limited", "cik_str": None, "exchange": "NSE", "country": "IND", "currency": "INR", "sec_supported": False},
-    {"ticker": "HINDUNILVR.NS", "title": "Hindustan Unilever Limited", "cik_str": None, "exchange": "NSE", "country": "IND", "currency": "INR", "sec_supported": False},
+    {
+        "ticker": "RELIANCE.NS",
+        "title": "Reliance Industries Limited",
+        "cik_str": None,
+        "exchange": "NSE",
+        "country": "IND",
+        "currency": "INR",
+        "sec_supported": False,
+    },
+    {
+        "ticker": "TCS.NS",
+        "title": "Tata Consultancy Services Limited",
+        "cik_str": None,
+        "exchange": "NSE",
+        "country": "IND",
+        "currency": "INR",
+        "sec_supported": False,
+    },
+    {
+        "ticker": "INFY.NS",
+        "title": "Infosys Limited",
+        "cik_str": None,
+        "exchange": "NSE",
+        "country": "IND",
+        "currency": "INR",
+        "sec_supported": False,
+    },
+    {
+        "ticker": "HDFCBANK.NS",
+        "title": "HDFC Bank Limited",
+        "cik_str": None,
+        "exchange": "NSE",
+        "country": "IND",
+        "currency": "INR",
+        "sec_supported": False,
+    },
+    {
+        "ticker": "ICICIBANK.NS",
+        "title": "ICICI Bank Limited",
+        "cik_str": None,
+        "exchange": "NSE",
+        "country": "IND",
+        "currency": "INR",
+        "sec_supported": False,
+    },
+    {
+        "ticker": "SBIN.NS",
+        "title": "State Bank of India",
+        "cik_str": None,
+        "exchange": "NSE",
+        "country": "IND",
+        "currency": "INR",
+        "sec_supported": False,
+    },
+    {
+        "ticker": "BHARTIARTL.NS",
+        "title": "Bharti Airtel Limited",
+        "cik_str": None,
+        "exchange": "NSE",
+        "country": "IND",
+        "currency": "INR",
+        "sec_supported": False,
+    },
+    {
+        "ticker": "ITC.NS",
+        "title": "ITC Limited",
+        "cik_str": None,
+        "exchange": "NSE",
+        "country": "IND",
+        "currency": "INR",
+        "sec_supported": False,
+    },
+    {
+        "ticker": "LT.NS",
+        "title": "Larsen & Toubro Limited",
+        "cik_str": None,
+        "exchange": "NSE",
+        "country": "IND",
+        "currency": "INR",
+        "sec_supported": False,
+    },
+    {
+        "ticker": "WIPRO.NS",
+        "title": "Wipro Limited",
+        "cik_str": None,
+        "exchange": "NSE",
+        "country": "IND",
+        "currency": "INR",
+        "sec_supported": False,
+    },
+    {
+        "ticker": "TATAMOTORS.NS",
+        "title": "Tata Motors Limited",
+        "cik_str": None,
+        "exchange": "NSE",
+        "country": "IND",
+        "currency": "INR",
+        "sec_supported": False,
+    },
+    {
+        "ticker": "KOTAKBANK.NS",
+        "title": "Kotak Mahindra Bank Limited",
+        "cik_str": None,
+        "exchange": "NSE",
+        "country": "IND",
+        "currency": "INR",
+        "sec_supported": False,
+    },
+    {
+        "ticker": "HINDUNILVR.NS",
+        "title": "Hindustan Unilever Limited",
+        "cik_str": None,
+        "exchange": "NSE",
+        "country": "IND",
+        "currency": "INR",
+        "sec_supported": False,
+    },
 ]
 
 # Common aliases mapping to authoritative ticker symbols
@@ -164,6 +593,7 @@ COMMON_ALIASES: dict[str, str] = {
 
 class SECAPIError(RuntimeError):
     """Base exception for SEC EDGAR API interactions."""
+
     def __init__(self, message: str, status_code: int | None = None):
         super().__init__(message)
         self.status_code = status_code
@@ -171,21 +601,25 @@ class SECAPIError(RuntimeError):
 
 class SECRateLimitError(SECAPIError):
     """Raised when SEC fair-access rate limit (max 10 requests/sec) is encountered."""
+
     pass
 
 
 class SECAccessDeniedError(SECAPIError):
     """Raised on HTTP 403 Forbidden, typically due to missing/invalid User-Agent header."""
+
     pass
 
 
 class SECNotFoundError(SECAPIError):
     """Raised when a company or filing is not found on SEC EDGAR."""
+
     pass
 
 
 class CompanyNotFoundError(ValueError):
     """Raised when a company cannot be identified by the stock resolver."""
+
     pass
 
 
@@ -253,7 +687,9 @@ class StockResolver:
         ticker = entry["ticker"].upper()
         title = entry["title"]
         cik_str = format_cik(entry.get("cik_str") or entry.get("cik"))
-        exchange = entry.get("exchange") or ("NSE" if ticker.endswith(".NS") else ("BSE" if ticker.endswith(".BO") else "US"))
+        exchange = entry.get("exchange") or (
+            "NSE" if ticker.endswith(".NS") else ("BSE" if ticker.endswith(".BO") else "US")
+        )
         country = entry.get("country") or ("IND" if ticker.endswith((".NS", ".BO")) else "USA")
         currency = entry.get("currency") or ("INR" if country == "IND" else "USD")
         sec_supported = bool(entry.get("sec_supported", country == "USA" and cik_str is not None))
@@ -301,8 +737,8 @@ class StockResolver:
 
         if sec_cache_path.exists():
             try:
-                mtime = sec_cache_path.stat().st_mtime
-                if (now - mtime) < SEC_TICKERS_TTL_SECONDS:
+                modified_at = sec_cache_path.stat().st_mtime
+                if (now - modified_at) < SEC_TICKERS_TTL_SECONDS:
                     with open(sec_cache_path, "r", encoding="utf-8") as f:
                         cached_data = json.load(f)
                     logger.info("Loaded SEC company tickers from local cache.")
@@ -313,16 +749,22 @@ class StockResolver:
         if cached_data is None:
             try:
                 logger.info(f"Downloading official SEC company tickers from {SEC_TICKERS_URL}...")
-                resp = self._session.get(SEC_TICKERS_URL, headers=self._get_headers(), timeout=10)
-                if resp.status_code == 200:
-                    cached_data = resp.json()
+                response = self._session.get(
+                    SEC_TICKERS_URL, headers=self._get_headers(), timeout=10
+                )
+                if response.status_code == 200:
+                    cached_data = response.json()
                     with open(sec_cache_path, "w", encoding="utf-8") as f:
                         json.dump(cached_data, f)
                     logger.info("SEC company tickers updated and cached successfully.")
                 else:
-                    logger.warning(f"SEC tickers fetch returned HTTP {resp.status_code}. Using bundled seed.")
+                    logger.warning(
+                        f"SEC tickers fetch returned HTTP {response.status_code}. Using bundled seed."
+                    )
             except Exception as exc:
-                logger.warning(f"Unable to download SEC tickers from network: {exc}. Using bundled seed fallback.")
+                logger.warning(
+                    f"Unable to download SEC tickers from network: {exc}. Using bundled seed fallback."
+                )
 
         # Index SEC EDGAR records if available
         if cached_data and isinstance(cached_data, dict):
@@ -331,15 +773,17 @@ class StockResolver:
                     t = row["ticker"].strip().upper()
                     # Keep existing bundled seed metadata if already indexed
                     if t not in self._by_ticker:
-                        self._index_company({
-                            "ticker": t,
-                            "title": row["title"].strip(),
-                            "cik_str": row.get("cik_str"),
-                            "exchange": "US",
-                            "country": "USA",
-                            "currency": "USD",
-                            "sec_supported": True,
-                        })
+                        self._index_company(
+                            {
+                                "ticker": t,
+                                "title": row["title"].strip(),
+                                "cik_str": row.get("cik_str"),
+                                "exchange": "US",
+                                "country": "USA",
+                                "currency": "USD",
+                                "sec_supported": True,
+                            }
+                        )
 
         self._loaded = True
         self._last_loaded_time = now
@@ -413,7 +857,9 @@ class StockResolver:
             return res
 
         # Controlled fuzzy match on stripped titles
-        matches = difflib.get_close_matches(stripped_q, list(self._by_stripped_title.keys()), n=1, cutoff=0.88)
+        matches = difflib.get_close_matches(
+            stripped_q, list(self._by_stripped_title.keys()), n=1, cutoff=0.88
+        )
         if matches:
             res = dict(self._by_stripped_title[matches[0]])
             res["match_type"] = "fuzzy_title"
@@ -464,8 +910,8 @@ class StockResolver:
 
         # Multi-word phrase matching (aliases or multi-word corporate titles >= 2 words)
         multi_word_phrases = sorted(
-            [k for k in COMMON_ALIASES.keys() if len(k.split()) >= 2] +
-            [k for k in self._by_stripped_title.keys() if len(k.split()) >= 2],
+            [k for k in COMMON_ALIASES.keys() if len(k.split()) >= 2]
+            + [k for k in self._by_stripped_title.keys() if len(k.split()) >= 2],
             key=lambda k: len(k.split()),
             reverse=True,
         )
@@ -511,7 +957,7 @@ class StockResolver:
         if not raw:
             return []
 
-        norm = normalize_text(raw)
+        normalized_name = normalize_text(raw)
         results: list[dict] = []
         seen: set[str] = set()
 
@@ -523,7 +969,7 @@ class StockResolver:
 
         # Prefix ticker matches
         for t, comp in self._by_ticker.items():
-            if t.startswith(norm.upper()) and comp["ticker"] not in seen:
+            if t.startswith(normalized_name.upper()) and comp["ticker"] not in seen:
                 results.append(comp)
                 seen.add(comp["ticker"])
                 if len(results) >= limit:
@@ -531,7 +977,7 @@ class StockResolver:
 
         # Prefix title matches
         for title, comp in self._by_stripped_title.items():
-            if title.startswith(norm) and comp["ticker"] not in seen:
+            if title.startswith(normalized_name) and comp["ticker"] not in seen:
                 results.append(comp)
                 seen.add(comp["ticker"])
                 if len(results) >= limit:
@@ -539,7 +985,7 @@ class StockResolver:
 
         # Substring title matches
         for title, comp in self._by_stripped_title.items():
-            if norm in title and comp["ticker"] not in seen:
+            if normalized_name in title and comp["ticker"] not in seen:
                 results.append(comp)
                 seen.add(comp["ticker"])
                 if len(results) >= limit:
@@ -559,6 +1005,7 @@ class StockResolver:
         if fkg is None:
             try:
                 from financial_graph import get_financial_graph
+
                 fkg = get_financial_graph()
             except Exception as exc:
                 logger.warning(f"Could not import FinancialKnowledgeGraph: {exc}")
@@ -596,17 +1043,20 @@ class StockResolver:
         RETURN c.ticker
         """
         try:
-            fkg.query(cypher, {
-                "ticker": ticker,
-                "name": name,
-                "cik": cik,
-                "exchange": exchange,
-                "country": country,
-                "currency": currency,
-                "sec_supported": sec_supported,
-                "source": "SEC_EDGAR" if sec_supported else "NSE",
-                "ts": ts,
-            })
+            fkg.query(
+                cypher,
+                {
+                    "ticker": ticker,
+                    "name": name,
+                    "cik": cik,
+                    "exchange": exchange,
+                    "country": country,
+                    "currency": currency,
+                    "sec_supported": sec_supported,
+                    "source": "SEC_EDGAR" if sec_supported else "NSE",
+                    "ts": ts,
+                },
+            )
             return True
         except Exception as exc:
             logger.warning(f"FalkorDB company upsert failed for {ticker}: {exc}")
@@ -635,6 +1085,7 @@ class StockResolver:
         if fkg is None:
             try:
                 from financial_graph import get_financial_graph
+
                 fkg = get_financial_graph()
             except Exception as exc:
                 logger.warning(f"Could not import FinancialKnowledgeGraph: {exc}")
@@ -656,14 +1107,14 @@ class StockResolver:
             "Free Cash Flow": "free_cash_flow",
         }
 
-        for m_name, m_id in metric_name_to_id.items():
+        for m_name, metric_id in metric_name_to_id.items():
             try:
                 fkg.query(
                     """
                     MERGE (m:FinancialMetric {id: $id})
                     ON CREATE SET m.name = $name, m.category = 'income_statement'
                     """,
-                    {"id": m_id, "name": m_name},
+                    {"id": metric_id, "name": m_name},
                 )
             except Exception:
                 pass
@@ -680,11 +1131,11 @@ class StockResolver:
             for m_name, val in m_dict.items():
                 if m_name == "currency" or val is None:
                     continue
-                m_id = metric_name_to_id.get(m_name)
-                if not m_id:
+                metric_id = metric_name_to_id.get(m_name)
+                if not metric_id:
                     continue
 
-                obs_id = f"obs_{ticker}_{m_id}_{year}_annual"
+                obs_id = f"obs_{ticker}_{metric_id}_{year}_annual"
                 try:
                     fkg.query(
                         """
@@ -714,7 +1165,7 @@ class StockResolver:
                         """,
                         {
                             "ticker": ticker,
-                            "metric_id": m_id,
+                            "metric_id": metric_id,
                             "year": year,
                             "val": float(val),
                             "curr": curr,
@@ -754,8 +1205,8 @@ class StockResolver:
 
         if not force_refresh and cache_file.exists():
             try:
-                mtime = cache_file.stat().st_mtime
-                if (now - mtime) < SEC_FACTS_TTL_SECONDS:
+                modified_at = cache_file.stat().st_mtime
+                if (now - modified_at) < SEC_FACTS_TTL_SECONDS:
                     with open(cache_file, "r", encoding="utf-8") as f:
                         return json.load(f)
             except Exception as exc:
@@ -769,9 +1220,9 @@ class StockResolver:
         last_exc: Exception | None = None
         for attempt in range(3):
             try:
-                resp = self._session.get(url, headers=headers, timeout=12)
-                if resp.status_code == 200:
-                    data = resp.json()
+                response = self._session.get(url, headers=headers, timeout=12)
+                if response.status_code == 200:
+                    data = response.json()
                     try:
                         with open(cache_file, "w", encoding="utf-8") as f:
                             json.dump(data, f)
@@ -779,29 +1230,33 @@ class StockResolver:
                         logger.warning(f"Failed writing facts cache for CIK {cik}: {exc}")
                     return data
 
-                elif resp.status_code == 403:
+                elif response.status_code == 403:
                     raise SECAccessDeniedError(
                         f"SEC EDGAR API access forbidden (HTTP 403). Please verify that SEC_USER_AGENT "
                         f"('{self.user_agent}') conforms to the SEC Fair Access policy with a valid admin email.",
                         status_code=403,
                     )
-                elif resp.status_code == 404:
+                elif response.status_code == 404:
                     raise SECNotFoundError(
                         f"No XBRL financial filings found on SEC EDGAR for {comp['ticker']} (CIK {cik}).",
                         status_code=404,
                     )
-                elif resp.status_code == 429:
-                    sleep_sec = 2.0 * (2 ** attempt)
-                    logger.warning(f"SEC EDGAR rate limited (HTTP 429). Backing off for {sleep_sec}s...")
+                elif response.status_code == 429:
+                    sleep_sec = 2.0 * (2**attempt)
+                    logger.warning(
+                        f"SEC EDGAR rate limited (HTTP 429). Backing off for {sleep_sec}s..."
+                    )
                     time.sleep(sleep_sec)
                     continue
                 else:
                     raise SECAPIError(
-                        f"SEC EDGAR request for {comp['ticker']} failed with HTTP {resp.status_code}.",
-                        status_code=resp.status_code,
+                        f"SEC EDGAR request for {comp['ticker']} failed with HTTP {response.status_code}.",
+                        status_code=response.status_code,
                     )
             except requests.Timeout as exc:
-                last_exc = SECAPIError(f"SEC EDGAR request for {comp['ticker']} timed out after 12s.")
+                last_exc = SECAPIError(
+                    f"SEC EDGAR request for {comp['ticker']} timed out after 12s."
+                )
                 time.sleep(1.0)
             except (SECAccessDeniedError, SECNotFoundError):
                 raise
@@ -838,7 +1293,14 @@ class StockResolver:
 
         # Metric mapping to primary taxonomy tags
         metric_tags = [
-            ("Total Revenue", ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet"]),
+            (
+                "Total Revenue",
+                [
+                    "RevenueFromContractWithCustomerExcludingAssessedTax",
+                    "Revenues",
+                    "SalesRevenueNet",
+                ],
+            ),
             ("Net Income", ["NetIncomeLoss", "ProfitLoss"]),
             ("Operating Income", ["OperatingIncomeLoss"]),
             ("Gross Profit", ["GrossProfit"]),
@@ -850,8 +1312,12 @@ class StockResolver:
                     units = us_gaap[tag].get("units", {}).get("USD", [])
                     # Select annual 10-K entries
                     annual_items = [
-                        u for u in units
-                        if u.get("form") in ("10-K", "10-K/A") and u.get("fp") == "FY" and "fy" in u and "val" in u
+                        u
+                        for u in units
+                        if u.get("form") in ("10-K", "10-K/A")
+                        and u.get("fp") == "FY"
+                        and "fy" in u
+                        and "val" in u
                     ]
                     for item in annual_items:
                         fy = int(item["fy"])

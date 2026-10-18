@@ -1,9 +1,5 @@
-"""
-Service dependency graph and health monitoring using FalkorDB.
+"""Track service dependencies and health in FalkorDB for diagnostic requests."""
 
-Models actual application services and their relationships.
-Used ONLY for diagnostics — never queried during normal financial Q&A.
-"""
 from __future__ import annotations
 
 import logging
@@ -24,17 +20,72 @@ _health_cache: dict[str, dict] = {}
 _CACHE_TTL = int(os.getenv("SERVICE_HEALTH_CACHE_TTL", "120"))
 
 APP_SERVICES = [
-    {"id": "frontend", "name": "Streamlit Frontend", "type": "frontend", "description": "Streamlit-based user interface for stock analysis dashboard."},
-    {"id": "ai-agent", "name": "AI Agent (Finance Agent Team)", "type": "ai_agent", "description": "Multi-step LangGraph financial analyst, researcher, and memory curator agents."},
-    {"id": "ai-provider", "name": "AI Provider (Groq)", "type": "ai_provider", "description": "Groq LLM API used for AI inference and tool calling."},
-    {"id": "api-key-manager", "name": "API Key Manager", "type": "infrastructure", "description": "Manages 3 AI API key slots with automatic failover logic."},
-    {"id": "stock-price-service", "name": "Stock Price Service", "type": "financial_data", "description": "Fetches real-time and historical stock prices via Yahoo Finance (yfinance)."},
-    {"id": "financial-statements-service", "name": "Financial Statements Service", "type": "financial_data", "description": "Fetches income statements, balance sheets, and cash flow statements via yfinance."},
-    {"id": "yahoo-finance", "name": "Yahoo Finance (yfinance)", "type": "external_provider", "description": "External data provider for stock prices and financial statements."},
-    {"id": "knowledge-store", "name": "Financial Knowledge Store", "type": "database", "description": "Shared FalkorDB vector store for financial chunks and memories."},
-    {"id": "conversation-store", "name": "Conversation Store", "type": "database", "description": "FalkorDB-backed persistent conversation threads, turns, and handoffs."},
-    {"id": "falkordb", "name": "FalkorDB", "type": "graph_database", "description": "Graph database for service dependencies, health data, knowledge chunks, and conversations."},
-    {"id": "embedding-service", "name": "Embedding Service", "type": "ml_service", "description": "HuggingFace sentence-transformers for vectorizing financial text."},
+    {
+        "id": "frontend",
+        "name": "Streamlit Frontend",
+        "type": "frontend",
+        "description": "Streamlit-based user interface for stock analysis dashboard.",
+    },
+    {
+        "id": "ai-agent",
+        "name": "AI Agent (Finance Agent Team)",
+        "type": "ai_agent",
+        "description": "Multi-step LangGraph financial analyst, researcher, and memory curator agents.",
+    },
+    {
+        "id": "ai-provider",
+        "name": "AI Provider (Groq)",
+        "type": "ai_provider",
+        "description": "Groq LLM API used for AI inference and tool calling.",
+    },
+    {
+        "id": "api-key-manager",
+        "name": "API Key Manager",
+        "type": "infrastructure",
+        "description": "Manages 3 AI API key slots with automatic failover logic.",
+    },
+    {
+        "id": "stock-price-service",
+        "name": "Stock Price Service",
+        "type": "financial_data",
+        "description": "Fetches real-time and historical stock prices via Yahoo Finance (yfinance).",
+    },
+    {
+        "id": "financial-statements-service",
+        "name": "Financial Statements Service",
+        "type": "financial_data",
+        "description": "Fetches income statements, balance sheets, and cash flow statements via yfinance.",
+    },
+    {
+        "id": "yahoo-finance",
+        "name": "Yahoo Finance (yfinance)",
+        "type": "external_provider",
+        "description": "External data provider for stock prices and financial statements.",
+    },
+    {
+        "id": "knowledge-store",
+        "name": "Financial Knowledge Store",
+        "type": "database",
+        "description": "Shared FalkorDB vector store for financial chunks and memories.",
+    },
+    {
+        "id": "conversation-store",
+        "name": "Conversation Store",
+        "type": "database",
+        "description": "FalkorDB-backed persistent conversation threads, turns, and handoffs.",
+    },
+    {
+        "id": "falkordb",
+        "name": "FalkorDB",
+        "type": "graph_database",
+        "description": "Graph database for service dependencies, health data, knowledge chunks, and conversations.",
+    },
+    {
+        "id": "embedding-service",
+        "name": "Embedding Service",
+        "type": "ml_service",
+        "description": "HuggingFace sentence-transformers for vectorizing financial text.",
+    },
 ]
 
 DEPENDENCY_EDGES = [
@@ -48,7 +99,12 @@ DEPENDENCY_EDGES = [
     {"from": "ai-agent", "to": "conversation-store", "type": "primary", "critical": True},
     {"from": "api-key-manager", "to": "ai-provider", "type": "primary", "critical": True},
     {"from": "stock-price-service", "to": "yahoo-finance", "type": "primary", "critical": True},
-    {"from": "financial-statements-service", "to": "yahoo-finance", "type": "primary", "critical": True},
+    {
+        "from": "financial-statements-service",
+        "to": "yahoo-finance",
+        "type": "primary",
+        "critical": True,
+    },
     {"from": "knowledge-store", "to": "falkordb", "type": "primary", "critical": True},
     {"from": "conversation-store", "to": "falkordb", "type": "primary", "critical": True},
     {"from": "ai-agent", "to": "embedding-service", "type": "support", "critical": False},
@@ -104,7 +160,7 @@ class ServiceGraph:
         except Exception:
             pass
 
-        for svc in APP_SERVICES:
+        for service in APP_SERVICES:
             self._q(
                 """
                 MERGE (s:Service {id: $id})
@@ -113,8 +169,12 @@ class ServiceGraph:
                 SET s.name = $name, s.type = $type, s.description = $desc
                 RETURN s.id
                 """,
-                id=svc["id"], name=svc["name"], type=svc["type"],
-                desc=svc["description"], status=UNKNOWN, ts=_now_iso(),
+                id=service["id"],
+                name=service["name"],
+                type=service["type"],
+                desc=service["description"],
+                status=UNKNOWN,
+                ts=_now_iso(),
             )
 
         for edge in DEPENDENCY_EDGES:
@@ -125,8 +185,10 @@ class ServiceGraph:
                 MERGE (a)-[r:DEPENDS_ON {type: $type}]->(b)
                 SET r.critical = $critical
                 """,
-                from_id=edge["from"], to_id=edge["to"],
-                type=edge["type"], critical=edge["critical"],
+                from_id=edge["from"],
+                to_id=edge["to"],
+                type=edge["type"],
+                critical=edge["critical"],
             )
 
     def _update_status(self, service_id: str, status: str, error: str | None = None) -> None:
@@ -138,14 +200,17 @@ class ServiceGraph:
             SET s.status = $status, s.last_checked = $ts, s.error = $error,
                 s.last_failure = CASE WHEN $status <> 'HEALTHY' THEN $ts ELSE s.last_failure END
             """,
-            id=service_id, status=status, ts=now, error=error or "",
+            id=service_id,
+            status=status,
+            ts=now,
+            error=error or "",
         )
 
     def run_health_checks(self) -> dict[str, str]:
         results: dict[str, str] = {}
         now = time.time()
-        for svc in APP_SERVICES:
-            sid = svc["id"]
+        for service in APP_SERVICES:
+            sid = service["id"]
             cached = _health_cache.get(sid)
             if cached and (now - cached["ts"]) < _CACHE_TTL:
                 results[sid] = cached["status"]
@@ -161,18 +226,24 @@ class ServiceGraph:
                 host = os.getenv("FALKORDB_HOST", "localhost")
                 port = int(os.getenv("FALKORDB_PORT", "6379"))
                 ok = _probe_tcp(host, port, timeout=2.0)
-                return (HEALTHY if ok else UNHEALTHY,
-                        None if ok else f"TCP connection to {host}:{port} refused")
+                return (
+                    HEALTHY if ok else UNHEALTHY,
+                    None if ok else f"TCP connection to {host}:{port} refused",
+                )
 
             elif service_id == "yahoo-finance":
                 ok = _probe_tcp("finance.yahoo.com", 443, timeout=5.0)
-                return (HEALTHY if ok else UNHEALTHY,
-                        None if ok else "Cannot reach finance.yahoo.com:443")
+                return (
+                    HEALTHY if ok else UNHEALTHY,
+                    None if ok else "Cannot reach finance.yahoo.com:443",
+                )
 
             elif service_id == "ai-provider":
                 ok = _probe_tcp("api.groq.com", 443, timeout=5.0)
-                return (HEALTHY if ok else UNHEALTHY,
-                        None if ok else "Cannot reach api.groq.com:443")
+                return (
+                    HEALTHY if ok else UNHEALTHY,
+                    None if ok else "Cannot reach api.groq.com:443",
+                )
 
             elif service_id in ("knowledge-store", "conversation-store"):
                 falkor_status = _health_cache.get("falkordb", {}).get("status", UNKNOWN)
@@ -185,7 +256,8 @@ class ServiceGraph:
             elif service_id in ("api-key-manager", "ai-agent"):
                 api_status = _health_cache.get("ai-provider", {}).get("status", UNKNOWN)
                 key_count = sum(
-                    1 for i in range(1, 4)
+                    1
+                    for i in range(1, 4)
                     if os.getenv(f"AI_API_KEY_{i}") or (i == 1 and os.getenv("GROQ_API_KEY"))
                 )
                 if key_count == 0:
@@ -214,16 +286,27 @@ class ServiceGraph:
         if use_cache:
             cached = _health_cache.get(service_id)
             if cached and (time.time() - cached["ts"]) < _CACHE_TTL:
-                return {"id": service_id, "status": cached["status"], "error": cached.get("error"), "source": "cache"}
+                return {
+                    "id": service_id,
+                    "status": cached["status"],
+                    "error": cached.get("error"),
+                    "source": "cache",
+                }
         rows = self._r(
             "MATCH (s:Service {id: $id}) RETURN s.name, s.status, s.last_checked, s.error",
             id=service_id,
         )
         if not rows:
             return {"id": service_id, "status": UNKNOWN, "error": None, "source": "not_found"}
-        name, status, ts, error = rows[0]
-        return {"id": service_id, "name": name, "status": status or UNKNOWN,
-                "last_checked": ts, "error": error or None, "source": "graph"}
+        name, status, timestamp, error = rows[0]
+        return {
+            "id": service_id,
+            "name": name,
+            "status": status or UNKNOWN,
+            "last_checked": timestamp,
+            "error": error or None,
+            "source": "graph",
+        }
 
     def get_service_dependencies(self, service_id: str) -> list[dict]:
         rows = self._r(
@@ -233,7 +316,9 @@ class ServiceGraph:
             """,
             id=service_id,
         )
-        return [{"id": r[0], "name": r[1], "status": r[2] or UNKNOWN, "critical": r[3]} for r in rows]
+        return [
+            {"id": r[0], "name": r[1], "status": r[2] or UNKNOWN, "critical": r[3]} for r in rows
+        ]
 
     def get_downstream_dependents(self, service_id: str) -> list[dict]:
         rows = self._r(
@@ -251,7 +336,8 @@ class ServiceGraph:
             MATCH p = (s:Service {id: $src})-[:DEPENDS_ON*1..6]->(t:Service {id: $tgt})
             RETURN [node IN nodes(p) | node.id] LIMIT 1
             """,
-            src=source_id, tgt=target_id,
+            src=source_id,
+            tgt=target_id,
         )
         return rows[0][0] if rows else []
 
@@ -264,20 +350,25 @@ class ServiceGraph:
             """,
             id=service_id,
         )
-        return [{"id": r[0], "name": r[1], "status": r[2], "error": r[3], "last_failure": r[4]} for r in rows]
+        return [
+            {"id": r[0], "name": r[1], "status": r[2], "error": r[3], "last_failure": r[4]}
+            for r in rows
+        ]
 
     def investigate_failure(self, service_id: str) -> dict:
         service_info = self.get_service_status(service_id)
-        deps = self.get_service_dependencies(service_id)
+        dependencies = self.get_service_dependencies(service_id)
         errors = self.get_recent_service_errors(service_id)
         affected = self.get_downstream_dependents(service_id)
 
         dep_chain: list[dict] = []
-        for dep in deps:
+        for dep in dependencies:
             path = self.get_dependency_path(service_id, dep["id"])
             dep_chain.append({**dep, "path": path})
 
-        critical_failures = [d for d in deps if d.get("critical") and d["status"] in (UNHEALTHY, DEGRADED)]
+        critical_failures = [
+            d for d in dependencies if d.get("critical") and d["status"] in (UNHEALTHY, DEGRADED)
+        ]
 
         if not self._available:
             confidence = "unavailable"
@@ -312,7 +403,14 @@ class ServiceGraph:
             "MATCH (s:Service) RETURN s.id, s.name, s.type, s.status, s.last_checked, s.error ORDER BY s.id"
         )
         return [
-            {"id": r[0], "name": r[1], "type": r[2], "status": r[3] or UNKNOWN, "last_checked": r[4], "error": r[5] or None}
+            {
+                "id": r[0],
+                "name": r[1],
+                "type": r[2],
+                "status": r[3] or UNKNOWN,
+                "last_checked": r[4],
+                "error": r[5] or None,
+            }
             for r in rows
         ]
 
@@ -329,11 +427,13 @@ def get_service_graph(graph: Any | None = None) -> ServiceGraph:
 
 def format_investigation_report(result: dict) -> str:
     lines = []
-    svc = result["service_status"]
-    lines.append(f"**Service:** {svc.get('name', result['service_id'])} (`{result['service_id']}`")
-    lines.append(f"**Status:** {svc['status']}")
-    if svc.get("error"):
-        lines.append(f"**Observed Error:** {svc['error']}")
+    service = result["service_status"]
+    lines.append(
+        f"**Service:** {service.get('name', result['service_id'])} (`{result['service_id']}`"
+    )
+    lines.append(f"**Status:** {service['status']}")
+    if service.get("error"):
+        lines.append(f"**Observed Error:** {service['error']}")
 
     if result["direct_dependencies"]:
         lines.append("\n**Dependency Path:**")
@@ -350,11 +450,15 @@ def format_investigation_report(result: dict) -> str:
 
     if result["affected_systems"]:
         lines.append("\n**Potentially Affected Systems:**")
-        for aff in result["affected_systems"]:
-            icon = {"HEALTHY": "✅", "DEGRADED": "⚠️", "UNHEALTHY": "❌"}.get(aff["status"], "❓")
-            lines.append(f"  {icon} {aff['name']} (`{aff['id']}`")
+        for affected_service in result["affected_systems"]:
+            icon = {"HEALTHY": "✅", "DEGRADED": "⚠️", "UNHEALTHY": "❌"}.get(
+                affected_service["status"], "❓"
+            )
+            lines.append(f"  {icon} {affected_service['name']} (`{affected_service['id']}`")
 
     lines.append(f"\n**Probable Cause:** {result['probable_cause']}")
     lines.append(f"**Confidence:** {result['confidence'].upper()}")
-    lines.append("\n*Note: Only verified health data is reported. Inferred impacts are potential, not confirmed.*")
+    lines.append(
+        "\n*Note: Only verified health data is reported. Inferred impacts are potential, not confirmed.*"
+    )
     return "\n".join(lines)

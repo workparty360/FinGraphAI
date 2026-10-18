@@ -1,4 +1,5 @@
 """Trace application stages and classify errors without recording sensitive data."""
+
 from __future__ import annotations
 
 import logging
@@ -67,9 +68,9 @@ def record_trace(
 
     Preserves privacy: never logs full private conversations, credentials, or secrets.
     """
-    ts = datetime.now(timezone.utc).isoformat()
+    timestamp = datetime.now(timezone.utc).isoformat()
     record = {
-        "timestamp": ts,
+        "timestamp": timestamp,
         "request_id": request_id,
         "stage": stage,
         "agent_name": agent_name,
@@ -82,7 +83,11 @@ def record_trace(
     }
     if details:
         # Include safe summary metadata only
-        safe_details = {k: v for k, v in details.items() if not any(s in k.lower() for s in ("key", "secret", "token", "password"))}
+        safe_details = {
+            k: v
+            for k, v in details.items()
+            if not any(s in k.lower() for s in ("key", "secret", "token", "password"))
+        }
         record["details"] = safe_details
 
     _TRACE_BUFFER.append(record)
@@ -114,29 +119,36 @@ def clear_traces() -> None:
 
 def classify_app_error(exc: Exception | str) -> str:
     """Map any exception to one of the explicit error categories (Section 15)."""
-    msg = str(exc).lower()
+    message = str(exc).lower()
 
-    if any(k in msg for k in ("401", "unauthorized", "invalid_api_key", "invalid api key")):
+    if any(k in message for k in ("401", "unauthorized", "invalid_api_key", "invalid api key")):
         return GROQ_AUTH_ERROR
-    if any(k in msg for k in ("429", "rate limit", "tpd", "rpd", "tokens per day")):
+    if any(k in message for k in ("429", "rate limit", "tpd", "rpd", "tokens per day")):
         return GROQ_RATE_LIMIT
-    if any(k in msg for k in ("model_not_found", "model not found", "unsupported model", "404")):
+    if any(
+        k in message for k in ("model_not_found", "model not found", "unsupported model", "404")
+    ):
         return GROQ_MODEL_ERROR
-    if any(k in msg for k in ("tool choice", "tool_call", "tool call", "invalid tool")):
+    if any(k in message for k in ("tool choice", "tool_call", "tool call", "invalid tool")):
         return GROQ_TOOL_ERROR
-    if "falkor" in msg and any(k in msg for k in ("connect", "refused", "offline", "socket", "port 6379")):
+    if "falkor" in message and any(
+        k in message for k in ("connect", "refused", "offline", "socket", "port 6379")
+    ):
         return FALKORDB_CONNECTION_ERROR
-    if "falkor" in msg or "cypher" in msg or "syntax error" in msg:
+    if "falkor" in message or "cypher" in message or "syntax error" in message:
         return FALKORDB_QUERY_ERROR
-    if "sec" in msg or "edgar" in msg:
+    if "sec" in message or "edgar" in message:
         return SEC_API_ERROR
-    if any(k in msg for k in ("timeout", "connection refused", "network unreachable", "dns", "connection error")):
+    if any(
+        k in message
+        for k in ("timeout", "connection refused", "network unreachable", "dns", "connection error")
+    ):
         return GROQ_NETWORK_ERROR
-    if "missing" in msg or "not found" in msg or "no data" in msg:
+    if "missing" in message or "not found" in message or "no data" in message:
         return FINANCIAL_DATA_MISSING
-    if "plan" in msg or "planner" in msg:
+    if "plan" in message or "planner" in message:
         return QUERY_PLANNING_ERROR
-    if "render" in msg or "streamlit" in msg:
+    if "render" in message or "streamlit" in message:
         return RESPONSE_RENDERING_ERROR
 
     return AGENT_EXECUTION_ERROR

@@ -2,6 +2,7 @@
 """
 Initialize the Financial Knowledge Graph schema and indexes in FalkorDB.
 """
+
 import logging
 import sys
 from financial_graph import get_financial_graph
@@ -12,14 +13,16 @@ logger = logging.getLogger("init_graph")
 
 def main():
     logger.info("Connecting to FalkorDB Financial Knowledge Graph...")
-    fkg = get_financial_graph()
+    financial_graph = get_financial_graph()
 
-    if not fkg.is_available:
-        logger.error(f"Cannot connect to FalkorDB at {fkg.host}:{fkg.port}. Please ensure FalkorDB is running.")
+    if not financial_graph.is_available:
+        logger.error(
+            f"Cannot connect to FalkorDB at {financial_graph.host}:{financial_graph.port}. Please ensure FalkorDB is running."
+        )
         sys.exit(1)
 
-    logger.info(f"Initializing schema and indexes on graph '{fkg.graph_name}'...")
-    fkg.init_schema()
+    logger.info(f"Initializing schema and indexes on graph '{financial_graph.graph_name}'...")
+    financial_graph.init_schema()
 
     # Also register node uniqueness constraints where supported or create indexes
     indexes = [
@@ -37,7 +40,7 @@ def main():
 
     for label, prop in indexes:
         try:
-            fkg.query(f"CREATE INDEX FOR (n:{label}) ON (n.{prop})")
+            financial_graph.query(f"CREATE INDEX FOR (n:{label}) ON (n.{prop})")
             logger.info(f"Created index on :{label}({prop})")
         except Exception:
             # Index might already exist

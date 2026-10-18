@@ -21,7 +21,6 @@ from stock_api import (
     get_stock_price,
 )
 
-
 REFRESH_INTERVAL_SECONDS = 300  # 5 minutes auto-refresh
 
 
@@ -81,13 +80,15 @@ def _docs_from_financial_statements(stock_context: dict) -> list[Document]:
     company = stock_context["companyName"]
     exchange = stock_context["exchange"]
     docs: list[Document] = []
-    intro = f"Symbol: {symbol}; Company: {company}; Exchange: {exchange}; Currency: {currency}. "
+    introduction = (
+        f"Symbol: {symbol}; Company: {company}; Exchange: {exchange}; Currency: {currency}. "
+    )
 
     # Company Profile & Sector Overview
     try:
         overview = get_company_overview(symbol)
         overview_text = (
-            f"{intro}Company Profile & Sector Overview: "
+            f"{introduction}Company Profile & Sector Overview: "
             f"Sector: {overview.get('sector')}; "
             f"Industry: {overview.get('industry')}; "
             f"Market Cap: {overview.get('marketCap')}; "
@@ -96,10 +97,16 @@ def _docs_from_financial_statements(stock_context: dict) -> list[Document]:
             f"Dividend Yield: {overview.get('dividendYield')}; "
             f"Summary: {overview.get('summary')}"
         )
-        docs.append(Document(
-            page_content=overview_text,
-            metadata={"source": "financial_company_overview", "symbol": symbol, "period": "current"}
-        ))
+        docs.append(
+            Document(
+                page_content=overview_text,
+                metadata={
+                    "source": "financial_company_overview",
+                    "symbol": symbol,
+                    "period": "current",
+                },
+            )
+        )
     except Exception:
         pass
 
@@ -107,7 +114,7 @@ def _docs_from_financial_statements(stock_context: dict) -> list[Document]:
     try:
         price_data = get_stock_price(symbol)
         price = price_data.get("price")
-        prev = price_data.get("previousClose")
+        previous_close = price_data.get("previousClose")
         change = price_data.get("change")
         change_pct = price_data.get("changePercent")
         day_high = price_data.get("dayHigh")
@@ -120,29 +127,34 @@ def _docs_from_financial_statements(stock_context: dict) -> list[Document]:
             if v is None:
                 return "N/A"
             if mktcap and v == mktcap:
-                return f"{curr_sym}{v / 1e9:,.2f}B" if abs(v) >= 1e9 else f"{curr_sym}{v / 1e7:,.2f}Cr"
+                return (
+                    f"{curr_sym}{v / 1e9:,.2f}B" if abs(v) >= 1e9 else f"{curr_sym}{v / 1e7:,.2f}Cr"
+                )
             return f"{curr_sym}{v:,.2f}"
 
         price_text = (
-            f"{intro}Live Market Price Data. "
+            f"{introduction}Live Market Price Data. "
             f"Current Price: {_fmt(price)} {currency}; "
-            f"Previous Close: {_fmt(prev)} {currency}; "
+            f"Previous Close: {_fmt(previous_close)} {currency}; "
             f"Day Change: {f'{curr_sym}{change:+,.2f}' if change is not None else 'N/A'} "
             f"({f'{change_pct:+.2f}%' if change_pct is not None else 'N/A'}); "
             f"Day High: {_fmt(day_high)}; Day Low: {_fmt(day_low)}; "
             f"Market Cap: {_fmt(mktcap)}. "
             f"Source: Yahoo Finance (real-time)."
         )
-        docs.append(Document(
-            page_content=price_text,
-            metadata={"source": "financial_live_price", "symbol": symbol, "period": "current"}
-        ))
+        docs.append(
+            Document(
+                page_content=price_text,
+                metadata={"source": "financial_live_price", "symbol": symbol, "period": "current"},
+            )
+        )
     except Exception:
         pass
 
     # Valuation & Key Metrics
     try:
         import yfinance as yf
+
         info = yf.Ticker(symbol).info or {}
         fields = {
             "Trailing P/E": info.get("trailingPE"),
@@ -181,14 +193,20 @@ def _docs_from_financial_statements(stock_context: dict) -> list[Document]:
         valid = {k: v for k, v in fields.items() if v is not None}
         if valid:
             metrics_text = (
-                f"{intro}Key Valuation & Financial Metrics (TTM / Latest): "
+                f"{introduction}Key Valuation & Financial Metrics (TTM / Latest): "
                 + "; ".join(f"{k}: {v}" for k, v in valid.items())
                 + f". Source: Yahoo Finance."
             )
-            docs.append(Document(
-                page_content=metrics_text,
-                metadata={"source": "financial_valuation_metrics", "symbol": symbol, "period": "ttm"}
-            ))
+            docs.append(
+                Document(
+                    page_content=metrics_text,
+                    metadata={
+                        "source": "financial_valuation_metrics",
+                        "symbol": symbol,
+                        "period": "ttm",
+                    },
+                )
+            )
     except Exception:
         pass
 
@@ -201,7 +219,7 @@ def _docs_from_financial_statements(stock_context: dict) -> list[Document]:
                 f"{r.get('date', '')}: close={r.get('close', 'N/A')}" for r in recent_prices[-5:]
             )
             hist_text = (
-                f"{intro}1-Year Historical Stock Price Summary. "
+                f"{introduction}1-Year Historical Stock Price Summary. "
                 f"Period: {hist_1y.get('startDate')} to {hist_1y.get('endDate')}; "
                 f"Data Points: {hist_1y.get('dataPoints')}; "
                 f"Latest Close: {hist_1y.get('latestClose')} {currency}; "
@@ -210,10 +228,16 @@ def _docs_from_financial_statements(stock_context: dict) -> list[Document]:
                 f"Most recent 5 sessions: {recent_str}. "
                 f"Source: Yahoo Finance."
             )
-            docs.append(Document(
-                page_content=hist_text,
-                metadata={"source": "financial_historical_prices_1y", "symbol": symbol, "period": "1y"}
-            ))
+            docs.append(
+                Document(
+                    page_content=hist_text,
+                    metadata={
+                        "source": "financial_historical_prices_1y",
+                        "symbol": symbol,
+                        "period": "1y",
+                    },
+                )
+            )
     except Exception:
         pass
 
@@ -228,7 +252,7 @@ def _docs_from_financial_statements(stock_context: dict) -> list[Document]:
                 for r in recent_prices[-10:]
             )
             hist_text = (
-                f"{intro}1-Month Historical OHLCV Price Data. "
+                f"{introduction}1-Month Historical OHLCV Price Data. "
                 f"Period: {hist_1m.get('startDate')} to {hist_1m.get('endDate')}; "
                 f"Latest Close: {hist_1m.get('latestClose')} {currency}; "
                 f"Month High: {hist_1m.get('maxClose')} {currency}; "
@@ -236,10 +260,16 @@ def _docs_from_financial_statements(stock_context: dict) -> list[Document]:
                 f"Recent 10 sessions: {recent_str}. "
                 f"Source: Yahoo Finance."
             )
-            docs.append(Document(
-                page_content=hist_text,
-                metadata={"source": "financial_historical_prices_1m", "symbol": symbol, "period": "1m"}
-            ))
+            docs.append(
+                Document(
+                    page_content=hist_text,
+                    metadata={
+                        "source": "financial_historical_prices_1m",
+                        "symbol": symbol,
+                        "period": "1m",
+                    },
+                )
+            )
     except Exception:
         pass
 
@@ -252,23 +282,24 @@ def _docs_from_financial_statements(stock_context: dict) -> list[Document]:
                     p_end = item.get("periodEnd", "")
                     metrics = item.get("metrics", {})
                     content = (
-                        f"{intro}Financial {period} {stmt_type} statement; period: {p_end}. "
+                        f"{introduction}Financial {period} {stmt_type} statement; period: {p_end}. "
                         f"{json.dumps(metrics, default=str, allow_nan=False)}. "
                         f"Source: Yahoo Finance."
                     )
-                    docs.append(Document(
-                        page_content=content,
-                        metadata={
-                            "source": f"financial_{period}_{stmt_type}",
-                            "period": str(p_end),
-                            "symbol": symbol,
-                        }
-                    ))
+                    docs.append(
+                        Document(
+                            page_content=content,
+                            metadata={
+                                "source": f"financial_{period}_{stmt_type}",
+                                "period": str(p_end),
+                                "symbol": symbol,
+                            },
+                        )
+                    )
             except Exception:
                 pass
 
     return docs
-
 
 
 def _render_stock_selector() -> dict | None:
@@ -278,9 +309,9 @@ def _render_stock_selector() -> dict | None:
     # Consume any pending ticker sync from the Chat tab (e.g. thread switch / New Chat).
     # Must happen BEFORE the widget is instantiated to avoid StreamlitWidgetAlreadyInstantiatedError.
     if "_ticker_sync" in st.session_state:
-        sync_val = st.session_state.pop("_ticker_sync")
+        pending_ticker = st.session_state.pop("_ticker_sync")
         if "central_ticker_input" not in st.session_state:
-            st.session_state["central_ticker_input"] = sync_val
+            st.session_state["central_ticker_input"] = pending_ticker
 
     col1, col2 = st.columns([3, 1])
     with col1:
@@ -301,7 +332,9 @@ def _render_stock_selector() -> dict | None:
     raw_input = user_ticker.strip()
     if not raw_input:
         st.session_state["selected_stock"] = None
-        st.info("No stock selected. Enter a ticker symbol above to load stock price, financials, and AI context.")
+        st.info(
+            "No stock selected. Enter a ticker symbol above to load stock price, financials, and AI context."
+        )
         return None
 
     try:
@@ -348,15 +381,20 @@ def _render_stock_selector() -> dict | None:
                 unsafe_allow_html=True,
             )
         else:
-            st.markdown(f"### **{company}** (`{symbol}`) &nbsp;·&nbsp; {exchange} &nbsp;·&nbsp; Currency: **{currency}**")
+            st.markdown(
+                f"### **{company}** (`{symbol}`) &nbsp;·&nbsp; {exchange} &nbsp;·&nbsp; Currency: **{currency}**"
+            )
     else:
-        st.markdown(f"### **{company}** (`{symbol}`) &nbsp;·&nbsp; {exchange} &nbsp;·&nbsp; Currency: **{currency}**")
+        st.markdown(
+            f"### **{company}** (`{symbol}`) &nbsp;·&nbsp; {exchange} &nbsp;·&nbsp; Currency: **{currency}**"
+        )
 
     return stock_context
 
 
 class ChartWrapper(alt.LayerChart):
     """LayerChart wrapper that preserves spec['encoding'] for scale inspection and assertions."""
+
     def to_dict(self, *args, **kwargs):
         d = super().to_dict(*args, **kwargs)
         if "encoding" not in d and "layer" in d and len(d["layer"]) > 0:
@@ -403,9 +441,13 @@ def build_stock_price_chart(
         alt.Tooltip("date:T", title="Date / Time", format=date_format),
     ]
     if "open" in chart_data.columns:
-        tooltip_fields.append(alt.Tooltip("open:Q", title=f"Open ({currency_symbol})", format=",.2f"))
+        tooltip_fields.append(
+            alt.Tooltip("open:Q", title=f"Open ({currency_symbol})", format=",.2f")
+        )
     if "high" in chart_data.columns:
-        tooltip_fields.append(alt.Tooltip("high:Q", title=f"High ({currency_symbol})", format=",.2f"))
+        tooltip_fields.append(
+            alt.Tooltip("high:Q", title=f"High ({currency_symbol})", format=",.2f")
+        )
     if "low" in chart_data.columns:
         tooltip_fields.append(alt.Tooltip("low:Q", title=f"Low ({currency_symbol})", format=",.2f"))
     tooltip_fields.append(alt.Tooltip("close:Q", title=f"Close ({currency_symbol})", format=",.2f"))
@@ -458,7 +500,9 @@ def build_stock_price_chart(
 
     # Note: Mousewheel, trackpad, and double-click zoom are disabled (.interactive() omitted).
     # Normal page scrolling is preserved.
-    return ChartWrapper(layer=[line, selectors, rule_x, rule_y, point_highlight, price_text]).properties(height=400)
+    return ChartWrapper(
+        layer=[line, selectors, rule_x, rule_y, point_highlight, price_text]
+    ).properties(height=400)
 
 
 @st.fragment(run_every=300)
@@ -508,11 +552,20 @@ def _render_stock_price_chart(selected_stock: dict | None):
 
     if is_stale:
         try:
-            fresh_df = fetch_historical_prices(full_ticker, api_key="", period=period, interval=interval)
+            fresh_df = fetch_historical_prices(
+                full_ticker, api_key="", period=period, interval=interval
+            )
             # Filter and reject negative or zero prices
-            fresh_df = fresh_df[(fresh_df["close"] > 0) & (fresh_df["open"] > 0) & (fresh_df["high"] > 0) & (fresh_df["low"] > 0)]
+            fresh_df = fresh_df[
+                (fresh_df["close"] > 0)
+                & (fresh_df["open"] > 0)
+                & (fresh_df["high"] > 0)
+                & (fresh_df["low"] > 0)
+            ]
             if fresh_df.empty:
-                raise FinancialAPIError(f"Historical data for {full_ticker} contains no valid positive prices.")
+                raise FinancialAPIError(
+                    f"Historical data for {full_ticker} contains no valid positive prices."
+                )
             price_df = fresh_df
             st.session_state[df_cache_key] = fresh_df
             st.session_state[df_ts_key] = now
@@ -539,9 +592,9 @@ def _render_stock_price_chart(selected_stock: dict | None):
     # Dynamic non-negative Y-axis domain
     min_price = float(price_df["close"].min())
     max_price = float(price_df["close"].max())
-    pad = (max_price - min_price) * 0.05 if max_price > min_price else max_price * 0.05
-    y_min = max(0.0, min_price - pad)  # Minimum is NEVER below zero
-    y_max = max(y_min + 1e-4, max_price + pad)
+    padding = (max_price - min_price) * 0.05 if max_price > min_price else max_price * 0.05
+    y_min = max(0.0, min_price - padding)  # Minimum is NEVER below zero
+    y_max = max(y_min + 1e-4, max_price + padding)
 
     chart_data = price_df.reset_index()
 
@@ -635,7 +688,6 @@ def _render_financial_overview(selected_stock: dict | None):
         st.metric("Market Cap", mcap_str)
 
 
-
 @st.fragment
 def _render_financial_statements(selected_stock: dict | None):
     """Financial statements section — income, balance, cashflow using centralized stock context."""
@@ -680,7 +732,9 @@ def _render_financial_statements(selected_stock: dict | None):
 
             if is_stale:
                 try:
-                    fresh_result = fetch_financial_statements(fin_ticker, statement=stmt_type, period=period_val)
+                    fresh_result = fetch_financial_statements(
+                        fin_ticker, statement=stmt_type, period=period_val
+                    )
                     result = fresh_result
                     st.session_state[cache_key] = fresh_result
                     st.session_state[ts_key] = now
@@ -750,22 +804,19 @@ def _render_document_viewer(selected_stock: dict | None):
                 f"**Reporting Currency:** {currency}\n"
                 f"**Standards:** Historical statements prepared in accordance with GAAP / Ind AS guidelines. "
                 f"Revenue is recognized when control of goods or services is transferred to customers.",
-
                 f"### Page 2: Significant Accounting Policies & Operational Highlights\n"
                 f"**Property, Plant & Equipment:** Recorded at cost less accumulated depreciation.\n"
                 f"**Intangible Assets:** Amortized over expected economic useful life on a straight-line basis.\n"
                 f"**Financial Instruments:** Measured at amortized cost or fair value through profit and loss.",
-
                 f"### Page 3: Capital Structure & Borrowings Note\n"
                 f"**Equity Capital:** Shares issued and fully paid up.\n"
                 f"**Debt Facilities:** Long-term borrowings secured by fixed assets and operational covenants.\n"
                 f"**Working Capital:** Maintained with scheduled revolving credit lines.",
-
                 f"### Page 4: Risk Management & Forward Disclosures\n"
                 f"**Market Risk:** Exposure to foreign currency fluctuations and interest rate volatility.\n"
                 f"**Credit Risk:** Managed through counterparty limits and monitoring procedures.\n"
-                f"**Liquidity:** Conservative cash buffers and short-term liquid investments."
-            ]
+                f"**Liquidity:** Conservative cash buffers and short-term liquid investments.",
+            ],
         },
         {
             "id": "quarterly_earnings_release",
@@ -774,11 +825,10 @@ def _render_document_viewer(selected_stock: dict | None):
                 f"### Page 1: Executive Summary & Performance Commentary\n"
                 f"Review of current quarterly operational throughput, customer additions, and margin profile for {symbol}.\n"
                 f"Strategic initiatives continue to deliver resilient cash flows.",
-
                 f"### Page 2: Segment Breakdown & Regional Distribution\n"
                 f"Detailed segment performance highlights growth across core and emerging business lines.\n"
-                f"Operating margins reflect disciplined cost control and productivity initiatives."
-            ]
+                f"Operating margins reflect disciplined cost control and productivity initiatives.",
+            ],
         },
         {
             "id": "auditors_report",
@@ -787,8 +837,8 @@ def _render_document_viewer(selected_stock: dict | None):
                 f"### Page 1: Independent Auditor's Report\n"
                 f"Financial statements present fairly, in all material respects, the financial position of {company}.\n"
                 f"Audit executed in accordance with statutory auditing standards."
-            ]
-        }
+            ],
+        },
     ]
 
     doc_titles = [d["title"] for d in docs_list]
@@ -796,7 +846,7 @@ def _render_document_viewer(selected_stock: dict | None):
         "Select Document",
         doc_titles,
         key=f"doc_select_{symbol}",
-        help="Select a report or disclosure to view its pages."
+        help="Select a report or disclosure to view its pages.",
     )
     current_doc = next(d for d in docs_list if d["title"] == selected_title)
     doc_id = current_doc["id"]
@@ -822,7 +872,9 @@ def _render_document_viewer(selected_stock: dict | None):
     with st.container(border=True):
         st.markdown(page_content)
 
-    st.caption(f"Document ID: `{doc_id}` · Page: {st.session_state[page_key]}/{total_pages} · Cached locally")
+    st.caption(
+        f"Document ID: `{doc_id}` · Page: {st.session_state[page_key]}/{total_pages} · Cached locally"
+    )
 
 
 @st.fragment
@@ -840,7 +892,9 @@ def _render_ai_chat_section(
         today = _dt.date.today().isoformat()
         doc_cache_key = f"agent_docs_{selected_stock['symbol']}_{today}"
         if doc_cache_key not in st.session_state:
-            with st.spinner(f"Loading {selected_stock['symbol']} financial data into knowledge store..."):
+            with st.spinner(
+                f"Loading {selected_stock['symbol']} financial data into knowledge store..."
+            ):
                 st.session_state[doc_cache_key] = _docs_from_financial_statements(selected_stock)
         docs = st.session_state[doc_cache_key]
 
@@ -880,7 +934,9 @@ def render_stock_api_analysis(workspace: str, user: str, thread: str, embedding_
 
     # AI Agent Team Chat for Selected Stock
     st.subheader("💬 AI Financial Analyst Team")
-    st.caption("Ask questions directly about the selected stock, financial statements, or multi-year performance.")
+    st.caption(
+        "Ask questions directly about the selected stock, financial statements, or multi-year performance."
+    )
     thread_key = f"dash_{selected_stock['symbol'] if selected_stock else 'main'}"
     _render_ai_chat_section(workspace, user, thread_key, selected_stock, embedding_model)
     st.divider()
@@ -901,6 +957,7 @@ def _render_service_diagnostics_section():
 
         try:
             from service_graph import get_service_graph, APP_SERVICES
+
             sg = get_service_graph()
         except Exception as exc:
             st.warning(f"Diagnostics service unavailable: {exc}")
@@ -936,14 +993,20 @@ def _render_service_diagnostics_section():
         selected_sid = st.selectbox(
             "Select service to inspect dependencies & failure details",
             options=service_options,
-            format_func=lambda sid: next((f"{s['name']} ({s['id']})" for s in APP_SERVICES if s["id"] == sid), sid),
+            format_func=lambda sid: next(
+                (f"{s['name']} ({s['id']})" for s in APP_SERVICES if s["id"] == sid), sid
+            ),
             key="diag_selected_service",
         )
 
         if selected_sid:
             inv = sg.investigate_failure(selected_sid)
             s_stat = inv["service_status"]
-            status_badge = {"HEALTHY": "✅ HEALTHY", "DEGRADED": "⚠️ DEGRADED", "UNHEALTHY": "❌ UNHEALTHY"}.get(s_stat.get("status"), "❓ UNKNOWN")
+            status_badge = {
+                "HEALTHY": "✅ HEALTHY",
+                "DEGRADED": "⚠️ DEGRADED",
+                "UNHEALTHY": "❌ UNHEALTHY",
+            }.get(s_stat.get("status"), "❓ UNKNOWN")
 
             c_d1, c_d2 = st.columns(2)
             with c_d1:
@@ -959,12 +1022,18 @@ def _render_service_diagnostics_section():
             if inv["direct_dependencies"]:
                 st.markdown("**Direct Dependencies:**")
                 for dep in inv["direct_dependencies"]:
-                    icon = {"HEALTHY": "✅", "DEGRADED": "⚠️", "UNHEALTHY": "❌"}.get(dep.get("status"), "❓")
+                    icon = {"HEALTHY": "✅", "DEGRADED": "⚠️", "UNHEALTHY": "❌"}.get(
+                        dep.get("status"), "❓"
+                    )
                     crit = " [CRITICAL]" if dep.get("critical") else ""
-                    st.write(f"- {icon} **{dep['name']}** (`{dep['id']}`){crit} — status: {dep.get('status')}")
+                    st.write(
+                        f"- {icon} **{dep['name']}** (`{dep['id']}`){crit} — status: {dep.get('status')}"
+                    )
 
             if inv["affected_systems"]:
                 st.markdown("**Potentially Affected Downstream Systems:**")
                 for aff in inv["affected_systems"]:
-                    icon = {"HEALTHY": "✅", "DEGRADED": "⚠️", "UNHEALTHY": "❌"}.get(aff.get("status"), "❓")
+                    icon = {"HEALTHY": "✅", "DEGRADED": "⚠️", "UNHEALTHY": "❌"}.get(
+                        aff.get("status"), "❓"
+                    )
                     st.write(f"- {icon} **{aff['name']}** (`{aff['id']}`)")

@@ -1,16 +1,5 @@
-"""Structured Prompt Construction Pipeline for FinModel AI.
+"""Build bounded analyst prompts from financial facts, sources, and conversation history."""
 
-Builds bounded, structured, and validated prompt packages for the Analyst Agent and Groq API.
-Adheres strictly to the architectural requirements:
-- Applicable system instructions
-- Current user question
-- Relevant recent conversation context
-- Resolved company and ticker
-- Relevant financial facts from FalkorDB
-- Source filing references (e.g. SEC 10-K)
-- Calculated financial metrics and composite scores
-- Relevant session-scoped memories from FalkorDB
-"""
 from __future__ import annotations
 
 import json
@@ -24,53 +13,123 @@ from financial_math import format_financial_amount
 
 def is_general_financial_query(question: str) -> bool:
     """Detect whether a query without an active stock is a general financial concept or educational question."""
-    q_lower = (question or "").strip().lower()
-    if not q_lower:
+    question_lower = (question or "").strip().lower()
+    if not question_lower:
         return False
 
-    has_year = bool(re.search(r"\b(?:19|20)\d{2}\b", q_lower)) or bool(re.search(r"\bfy\s*\d{2,4}\b", q_lower))
+    has_year = bool(re.search(r"\b(?:19|20)\d{2}\b", question_lower)) or bool(
+        re.search(r"\bfy\s*\d{2,4}\b", question_lower)
+    )
 
     general_phrases = [
-        "what is ", "what are ", "explain ", "define ", "meaning of ",
-        "how does ", "how do ", "difference between ", "formula for ",
-        "how to calculate ", "tell me about ", "overview of ", "concept of ",
+        "what is ",
+        "what are ",
+        "explain ",
+        "define ",
+        "meaning of ",
+        "how does ",
+        "how do ",
+        "difference between ",
+        "formula for ",
+        "how to calculate ",
+        "tell me about ",
+        "overview of ",
+        "concept of ",
     ]
-    is_general_phrase = any(q_lower.startswith(p) or f" {p}" in q_lower for p in general_phrases)
+    is_general_phrase = any(
+        question_lower.startswith(p) or f" {p}" in question_lower for p in general_phrases
+    )
 
     financial_terms = [
-        "return on equity", "roe", "return on assets", "roa", "return on capital", "roce",
-        "balance sheet", "income statement", "cash flow statement", "free cash flow",
-        "operating margin", "gross margin", "net margin", "profit margin",
-        "ebitda", "ebit", "p/e ratio", "pe ratio", "price to earnings",
-        "working capital", "debt to equity", "current ratio", "quick ratio",
-        "financial leverage", "capital structure", "amortization", "depreciation",
-        "wacc", "cost of capital", "dividend yield", "earnings per share", "eps",
+        "return on equity",
+        "roe",
+        "return on assets",
+        "roa",
+        "return on capital",
+        "roce",
+        "balance sheet",
+        "income statement",
+        "cash flow statement",
+        "free cash flow",
+        "operating margin",
+        "gross margin",
+        "net margin",
+        "profit margin",
+        "ebitda",
+        "ebit",
+        "p/e ratio",
+        "pe ratio",
+        "price to earnings",
+        "working capital",
+        "debt to equity",
+        "current ratio",
+        "quick ratio",
+        "financial leverage",
+        "capital structure",
+        "amortization",
+        "depreciation",
+        "wacc",
+        "cost of capital",
+        "dividend yield",
+        "earnings per share",
+        "eps",
     ]
-    has_financial_term = any(term in q_lower for term in financial_terms)
+    has_financial_term = any(term in question_lower for term in financial_terms)
 
     # If it asks about a general concept and has NO specific year attached, it's general knowledge
     if is_general_phrase and has_financial_term and not has_year:
         return True
 
     # Standalone ratio/concept questions (e.g. "What is ROE?")
-    if (is_general_phrase or has_financial_term) and not has_year and not any(k in q_lower for k in ("its", "their", "his", "her", "share price", "stock price")):
+    if (
+        (is_general_phrase or has_financial_term)
+        and not has_year
+        and not any(
+            k in question_lower
+            for k in ("its", "their", "his", "her", "share price", "stock price")
+        )
+    ):
         return True
 
     return False
 
 
-def is_unspecified_company_follow_up(question: str, target_ticker: str, conversation_history: list[dict]) -> bool:
+def is_unspecified_company_follow_up(
+    question: str, target_ticker: str, conversation_history: list[dict]
+) -> bool:
     """Detect whether a question is asking for company-specific data but no company is identified or in history."""
     if target_ticker:
         return False
 
-    q_lower = (question or "").strip().lower()
-    has_year = bool(re.search(r"\b(?:19|20)\d{2}\b", q_lower)) or bool(re.search(r"\bfy\s*\d{2,4}\b", q_lower))
-    has_company_data_words = any(w in q_lower for w in ["revenue", "net income", "profit", "sales", "earnings", "stock", "shares", "dividend", "performance", "best year", "worst year"])
-    has_follow_up_phrase = any(p in q_lower for p in ["what about", "how about", "and in", "what was", "how much was"])
+    question_lower = (question or "").strip().lower()
+    has_year = bool(re.search(r"\b(?:19|20)\d{2}\b", question_lower)) or bool(
+        re.search(r"\bfy\s*\d{2,4}\b", question_lower)
+    )
+    has_company_data_words = any(
+        w in question_lower
+        for w in [
+            "revenue",
+            "net income",
+            "profit",
+            "sales",
+            "earnings",
+            "stock",
+            "shares",
+            "dividend",
+            "performance",
+            "best year",
+            "worst year",
+        ]
+    )
+    has_follow_up_phrase = any(
+        p in question_lower
+        for p in ["what about", "how about", "and in", "what was", "how much was"]
+    )
 
     # If it asks for year-specific or company data with no company active
-    return (has_year or has_company_data_words or has_follow_up_phrase) and not is_general_financial_query(question)
+    return (
+        has_year or has_company_data_words or has_follow_up_phrase
+    ) and not is_general_financial_query(question)
 
 
 def build_analyst_prompt_package(
@@ -163,107 +222,152 @@ def build_analyst_prompt_package(
     # Extract exact metric observations
     exact_m = retrieved_data.get("exact_metric")
     if exact_m and exact_m.get("value") is not None:
-        financial_facts.append({
-            "ticker": exact_m.get("ticker", target_ticker),
-            "company": exact_m.get("company_name", target_company),
-            "fiscal_year": exact_m.get("fiscal_year"),
-            "metric": exact_m.get("metric"),
-            "value": exact_m.get("value"),
-            "formatted_value": format_financial_amount(exact_m.get("value"), exact_m.get("currency", target_currency)),
-            "currency": exact_m.get("currency", target_currency),
-            "source": exact_m.get("source_title", "Regulatory Filing"),
-        })
+        financial_facts.append(
+            {
+                "ticker": exact_m.get("ticker", target_ticker),
+                "company": exact_m.get("company_name", target_company),
+                "fiscal_year": exact_m.get("fiscal_year"),
+                "metric": exact_m.get("metric"),
+                "value": exact_m.get("value"),
+                "formatted_value": format_financial_amount(
+                    exact_m.get("value"), exact_m.get("currency", target_currency)
+                ),
+                "currency": exact_m.get("currency", target_currency),
+                "source": exact_m.get("source_title", "Regulatory Filing"),
+            }
+        )
         if exact_m.get("source_url"):
-            sources.append({
-                "title": exact_m.get("source_title", "Regulatory Filing"),
-                "url": exact_m.get("source_url"),
-                "filing_type": exact_m.get("filing_type", "Form 10-K"),
-            })
+            sources.append(
+                {
+                    "title": exact_m.get("source_title", "Regulatory Filing"),
+                    "url": exact_m.get("source_url"),
+                    "filing_type": exact_m.get("filing_type", "Form 10-K"),
+                }
+            )
 
     # Extract single year overview
-    syo = retrieved_data.get("single_year_overview")
-    if syo and syo.get("metrics"):
-        yr = syo.get("year")
-        curr = syo.get("currency", target_currency)
-        for m_name, val in syo["metrics"].items():
+    annual_overview = retrieved_data.get("single_year_overview")
+    if annual_overview and annual_overview.get("metrics"):
+        yr = annual_overview.get("year")
+        curr = annual_overview.get("currency", target_currency)
+        for m_name, val in annual_overview["metrics"].items():
             if m_name != "currency" and val is not None:
-                financial_facts.append({
-                    "ticker": target_ticker,
-                    "company": target_company,
-                    "fiscal_year": yr,
-                    "metric": m_name,
-                    "value": val,
-                    "formatted_value": f"{val:.2f}%" if "margin" in m_name.lower() else format_financial_amount(val, curr),
-                    "currency": curr,
-                    "source": f"Form 10-K (FY{yr})",
-                })
+                financial_facts.append(
+                    {
+                        "ticker": target_ticker,
+                        "company": target_company,
+                        "fiscal_year": yr,
+                        "metric": m_name,
+                        "value": val,
+                        "formatted_value": (
+                            f"{val:.2f}%"
+                            if "margin" in m_name.lower()
+                            else format_financial_amount(val, curr)
+                        ),
+                        "currency": curr,
+                        "source": f"Form 10-K (FY{yr})",
+                    }
+                )
 
     # Extract best year analysis
-    bya = retrieved_data.get("best_year_analysis")
-    if bya and not bya.get("error"):
-        calculated_metrics.append({
-            "type": "best_performing_year_composite",
-            "best_composite_year": bya.get("best_composite_year"),
-            "highest_revenue_year": bya.get("leaders", {}).get("highest_revenue", {}).get("year"),
-            "highest_revenue_value": bya.get("leaders", {}).get("highest_revenue", {}).get("formatted"),
-            "highest_net_income_year": bya.get("leaders", {}).get("highest_net_income", {}).get("year"),
-            "highest_net_income_value": bya.get("leaders", {}).get("highest_net_income", {}).get("formatted"),
-            "highest_margin_year": bya.get("leaders", {}).get("highest_operating_margin", {}).get("year"),
-            "highest_margin_value": bya.get("leaders", {}).get("highest_operating_margin", {}).get("formatted"),
-            "summary": bya.get("summary_text"),
-        })
+    best_year_analysis = retrieved_data.get("best_year_analysis")
+    if best_year_analysis and not best_year_analysis.get("error"):
+        calculated_metrics.append(
+            {
+                "type": "best_performing_year_composite",
+                "best_composite_year": best_year_analysis.get("best_composite_year"),
+                "highest_revenue_year": best_year_analysis.get("leaders", {})
+                .get("highest_revenue", {})
+                .get("year"),
+                "highest_revenue_value": best_year_analysis.get("leaders", {})
+                .get("highest_revenue", {})
+                .get("formatted"),
+                "highest_net_income_year": best_year_analysis.get("leaders", {})
+                .get("highest_net_income", {})
+                .get("year"),
+                "highest_net_income_value": best_year_analysis.get("leaders", {})
+                .get("highest_net_income", {})
+                .get("formatted"),
+                "highest_margin_year": best_year_analysis.get("leaders", {})
+                .get("highest_operating_margin", {})
+                .get("year"),
+                "highest_margin_value": best_year_analysis.get("leaders", {})
+                .get("highest_operating_margin", {})
+                .get("formatted"),
+                "summary": best_year_analysis.get("summary_text"),
+            }
+        )
 
     # Extract performance comparison
-    pc = retrieved_data.get("performance_comparison")
-    if pc and not pc.get("error"):
-        calculated_metrics.append({
-            "type": "multi_year_comparison",
-            "start_year": pc.get("start_year"),
-            "end_year": pc.get("end_year"),
-            "revenue_start": format_financial_amount(pc.get("revenue", {}).get("start"), target_currency),
-            "revenue_end": format_financial_amount(pc.get("revenue", {}).get("end"), target_currency),
-            "net_income_start": format_financial_amount(pc.get("net_income", {}).get("start"), target_currency),
-            "net_income_end": format_financial_amount(pc.get("net_income", {}).get("end"), target_currency),
-            "summary": pc.get("summary_text"),
-        })
+    performance_comparison = retrieved_data.get("performance_comparison")
+    if performance_comparison and not performance_comparison.get("error"):
+        calculated_metrics.append(
+            {
+                "type": "multi_year_comparison",
+                "start_year": performance_comparison.get("start_year"),
+                "end_year": performance_comparison.get("end_year"),
+                "revenue_start": format_financial_amount(
+                    performance_comparison.get("revenue", {}).get("start"), target_currency
+                ),
+                "revenue_end": format_financial_amount(
+                    performance_comparison.get("revenue", {}).get("end"), target_currency
+                ),
+                "net_income_start": format_financial_amount(
+                    performance_comparison.get("net_income", {}).get("start"), target_currency
+                ),
+                "net_income_end": format_financial_amount(
+                    performance_comparison.get("net_income", {}).get("end"), target_currency
+                ),
+                "summary": performance_comparison.get("summary_text"),
+            }
+        )
 
     # Extract comparison data across multiple companies
-    comp_data = retrieved_data.get("comparison_data") or {}
-    metrics_comp = comp_data.get("metrics_comparison", [])
+    comparison_data = retrieved_data.get("comparison_data") or {}
+    metrics_comp = comparison_data.get("metrics_comparison", [])
     for row in metrics_comp:
-        financial_facts.append({
-            "ticker": row.get("ticker"),
-            "company": row.get("company_name"),
-            "fiscal_year": row.get("fiscal_year"),
-            "metric": row.get("metric"),
-            "value": row.get("value"),
-            "formatted_value": format_financial_amount(row.get("value"), row.get("currency", "USD")),
-            "currency": row.get("currency", "USD"),
-            "source": row.get("source_title", "Regulatory Filing"),
-        })
+        financial_facts.append(
+            {
+                "ticker": row.get("ticker"),
+                "company": row.get("company_name"),
+                "fiscal_year": row.get("fiscal_year"),
+                "metric": row.get("metric"),
+                "value": row.get("value"),
+                "formatted_value": format_financial_amount(
+                    row.get("value"), row.get("currency", "USD")
+                ),
+                "currency": row.get("currency", "USD"),
+                "source": row.get("source_title", "Regulatory Filing"),
+            }
+        )
         if row.get("source_url"):
-            sources.append({
-                "title": row.get("source_title", "Regulatory Filing"),
-                "url": row.get("source_url"),
-                "filing_type": row.get("filing_type", "Form 10-K"),
-            })
+            sources.append(
+                {
+                    "title": row.get("source_title", "Regulatory Filing"),
+                    "url": row.get("source_url"),
+                    "filing_type": row.get("filing_type", "Form 10-K"),
+                }
+            )
 
     # Trace evidence path if available
     ev_path = retrieved_data.get("evidence_path")
     if ev_path:
-        sources.append({
-            "title": ev_path.get("document_title") or ev_path.get("source_title", "Regulatory Filing"),
-            "url": ev_path.get("document_url") or ev_path.get("source_url", ""),
-            "filing_type": ev_path.get("filing_type", "Form 10-K"),
-            "provenance_path": ev_path.get("evidence_path"),
-        })
+        sources.append(
+            {
+                "title": ev_path.get("document_title")
+                or ev_path.get("source_title", "Regulatory Filing"),
+                "url": ev_path.get("document_url") or ev_path.get("source_url", ""),
+                "filing_type": ev_path.get("filing_type", "Form 10-K"),
+                "provenance_path": ev_path.get("evidence_path"),
+            }
+        )
 
     # Semantic and episodic memories
     relevant_memories = []
-    for mem in (retrieved_data.get("memories") or []):
-        m_content = mem.get("content", "") if isinstance(mem, dict) else str(mem)
-        if m_content:
-            relevant_memories.append(m_content[:200])
+    for mem in retrieved_data.get("memories") or []:
+        memory_content = mem.get("content", "") if isinstance(mem, dict) else str(mem)
+        if memory_content:
+            relevant_memories.append(memory_content[:200])
 
     context_package = {
         "question": question,
@@ -316,18 +420,30 @@ def build_analyst_prompt_package(
         context_lines.append("### Verified Financial Observations (FalkorDB / SEC EDGAR):")
         for f in financial_facts:
             src = f.get("source", "Official Filing")
-            context_lines.append(f"- **{f['company']} ({f['ticker']}) FY{f.get('fiscal_year', 'N/A')} {f['metric']}:** {f['formatted_value']} ({f['currency']}) [Source: {src}]")
+            context_lines.append(
+                f"- **{f['company']} ({f['ticker']}) FY{f.get('fiscal_year', 'N/A')} {f['metric']}:** {f['formatted_value']} ({f['currency']}) [Source: {src}]"
+            )
 
     if calculated_metrics:
         context_lines.append("\n### Pre-Calculated Analytics & Composite Scores:")
         for cm in calculated_metrics:
             if cm.get("type") == "best_performing_year_composite":
-                context_lines.append(f"- **Best Composite Year:** FY{cm.get('best_composite_year')}")
-                context_lines.append(f"- **Highest Revenue:** FY{cm.get('highest_revenue_year')} with {cm.get('highest_revenue_value')}")
-                context_lines.append(f"- **Highest Net Income:** FY{cm.get('highest_net_income_year')} with {cm.get('highest_net_income_value')}")
-                context_lines.append(f"- **Highest Operating Margin:** FY{cm.get('highest_margin_year')} with {cm.get('highest_margin_value')}")
+                context_lines.append(
+                    f"- **Best Composite Year:** FY{cm.get('best_composite_year')}"
+                )
+                context_lines.append(
+                    f"- **Highest Revenue:** FY{cm.get('highest_revenue_year')} with {cm.get('highest_revenue_value')}"
+                )
+                context_lines.append(
+                    f"- **Highest Net Income:** FY{cm.get('highest_net_income_year')} with {cm.get('highest_net_income_value')}"
+                )
+                context_lines.append(
+                    f"- **Highest Operating Margin:** FY{cm.get('highest_margin_year')} with {cm.get('highest_margin_value')}"
+                )
             elif cm.get("type") == "multi_year_comparison":
-                context_lines.append(f"- **FY{cm.get('start_year')} vs FY{cm.get('end_year')}:** Revenue grew from {cm.get('revenue_start')} to {cm.get('revenue_end')}; Net Income from {cm.get('net_income_start')} to {cm.get('net_income_end')}")
+                context_lines.append(
+                    f"- **FY{cm.get('start_year')} vs FY{cm.get('end_year')}:** Revenue grew from {cm.get('revenue_start')} to {cm.get('revenue_end')}; Net Income from {cm.get('net_income_start')} to {cm.get('net_income_end')}"
+                )
 
     if sources:
         context_lines.append("\n### Verified Filing Citations:")
@@ -371,7 +487,6 @@ def build_analyst_prompt_package(
 
     if not context_text:
         context_text = "No historical graph records found for this query."
-
 
     # Assemble messages with conversation history for multi-turn awareness
     messages = [SystemMessage(content=system_prompt)]

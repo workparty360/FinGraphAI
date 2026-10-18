@@ -1,10 +1,5 @@
-"""
-Financial Knowledge Graph Engine using FalkorDB.
+"""Store and query companies, financial observations, and source evidence in FalkorDB."""
 
-Manages the core financial knowledge graph modeling companies, sectors,
-industries, financial statements, reporting periods, metrics, observations,
-and source document evidence.
-"""
 from __future__ import annotations
 
 import logging
@@ -23,13 +18,20 @@ DEFAULT_GRAPH_NAME = "financial_knowledge"
 
 class FalkorDBUnavailableError(RuntimeError):
     """Raised when FalkorDB is unreachable and graph intelligence cannot proceed."""
+
     pass
 
 
 class FinancialKnowledgeGraph:
     """Core FalkorDB interface for the Financial Knowledge Graph."""
 
-    def __init__(self, host: str | None = None, port: int | None = None, graph_name: str | None = None, graph: Any | None = None):
+    def __init__(
+        self,
+        host: str | None = None,
+        port: int | None = None,
+        graph_name: str | None = None,
+        graph: Any | None = None,
+    ):
         self.host = host or os.getenv("FALKORDB_HOST", "localhost")
         self.port = int(port or os.getenv("FALKORDB_PORT", "6379"))
         self.graph_name = graph_name or os.getenv("FALKORDB_FINANCIAL_GRAPH", DEFAULT_GRAPH_NAME)
@@ -87,7 +89,9 @@ class FinancialKnowledgeGraph:
             return res.result_set
         except Exception as exc:
             if "Connection" in str(exc) or "refused" in str(exc).lower():
-                raise FalkorDBUnavailableError(f"FalkorDB query failed due to connection error: {exc}") from exc
+                raise FalkorDBUnavailableError(
+                    f"FalkorDB query failed due to connection error: {exc}"
+                ) from exc
             logger.error(f"Cypher write query error: {exc}\nCypher: {cypher}")
             raise
 
@@ -101,7 +105,9 @@ class FinancialKnowledgeGraph:
             if "empty key" in err_str.lower():
                 return []
             if "Connection" in err_str or "refused" in err_str.lower():
-                raise FalkorDBUnavailableError(f"FalkorDB read query failed due to connection error: {exc}") from exc
+                raise FalkorDBUnavailableError(
+                    f"FalkorDB read query failed due to connection error: {exc}"
+                ) from exc
             logger.error(f"Cypher read query error: {exc}\nCypher: {cypher}")
             raise
 
@@ -132,7 +138,7 @@ class FinancialKnowledgeGraph:
 
     def find_company(self, ticker: str) -> dict | None:
         """Find company node and its sector/industry relationships."""
-        sym = ticker.strip().upper()
+        symbol = ticker.strip().upper()
         cypher = """
         MATCH (c:Company)
         WHERE c.ticker = $ticker OR c.id = $ticker
@@ -141,18 +147,18 @@ class FinancialKnowledgeGraph:
         RETURN c.id, c.name, c.ticker, c.exchange, c.country, s.name, i.name
         LIMIT 1
         """
-        rows = self.ro_query(cypher, {"ticker": sym})
+        rows = self.ro_query(cypher, {"ticker": symbol})
         if not rows:
             return None
-        r = rows[0]
+        row = rows[0]
         return {
-            "id": r[0],
-            "name": r[1],
-            "ticker": r[2],
-            "exchange": r[3],
-            "country": r[4],
-            "sector": r[5] or "N/A",
-            "industry": r[6] or "N/A",
+            "id": row[0],
+            "name": row[1],
+            "ticker": row[2],
+            "exchange": row[3],
+            "country": row[4],
+            "sector": row[5] or "N/A",
+            "industry": row[6] or "N/A",
         }
 
     def get_company_financials(
@@ -164,7 +170,7 @@ class FinancialKnowledgeGraph:
         limit: int = 10,
     ) -> list[dict]:
         """Retrieve financial observations for a given company and metric ordered by fiscal year."""
-        sym = ticker.strip().upper()
+        symbol = ticker.strip().upper()
         cypher = """
         MATCH (c:Company {ticker: $ticker})-[:HAS_OBSERVATION]->(o:FinancialObservation)-[:MEASURES]->(m:FinancialMetric)
         WHERE (toLower(m.name) = toLower($metric) OR toLower(m.id) = toLower($metric))
@@ -176,29 +182,34 @@ class FinancialKnowledgeGraph:
         ORDER BY o.fiscal_year ASC
         LIMIT $limit
         """
-        rows = self.ro_query(cypher, {
-            "ticker": sym,
-            "metric": metric_name,
-            "period_type": period_type,
-            "fiscal_year": fiscal_year,
-            "limit": limit,
-        })
+        rows = self.ro_query(
+            cypher,
+            {
+                "ticker": symbol,
+                "metric": metric_name,
+                "period_type": period_type,
+                "fiscal_year": fiscal_year,
+                "limit": limit,
+            },
+        )
         results = []
-        for r in rows:
-            results.append({
-                "ticker": r[0],
-                "company_name": r[1],
-                "metric": r[2],
-                "observation_id": r[3],
-                "value": float(r[4]) if r[4] is not None else None,
-                "currency": r[5],
-                "fiscal_year": int(r[6]) if r[6] is not None else None,
-                "period_type": r[7],
-                "period_end": r[8],
-                "source_doc_id": r[9],
-                "source_title": r[10],
-                "source_url": r[11],
-            })
+        for row in rows:
+            results.append(
+                {
+                    "ticker": row[0],
+                    "company_name": row[1],
+                    "metric": row[2],
+                    "observation_id": row[3],
+                    "value": float(row[4]) if row[4] is not None else None,
+                    "currency": row[5],
+                    "fiscal_year": int(row[6]) if row[6] is not None else None,
+                    "period_type": row[7],
+                    "period_end": row[8],
+                    "source_doc_id": row[9],
+                    "source_title": row[10],
+                    "source_url": row[11],
+                }
+            )
         return results
 
     def compare_company_metrics(
@@ -220,30 +231,35 @@ class FinancialKnowledgeGraph:
         RETURN c.ticker, c.name, m.name, o.fiscal_year, o.value, o.currency, o.period_type, doc.title, doc.source_url
         ORDER BY o.fiscal_year ASC, c.ticker ASC
         """
-        rows = self.ro_query(cypher, {
-            "tickers": clean_tickers,
-            "metric": metric_name,
-            "period_type": period_type,
-            "fiscal_year": fiscal_year,
-        })
+        rows = self.ro_query(
+            cypher,
+            {
+                "tickers": clean_tickers,
+                "metric": metric_name,
+                "period_type": period_type,
+                "fiscal_year": fiscal_year,
+            },
+        )
         results = []
-        for r in rows:
-            results.append({
-                "ticker": r[0],
-                "company_name": r[1],
-                "metric": r[2],
-                "fiscal_year": int(r[3]) if r[3] is not None else None,
-                "value": float(r[4]) if r[4] is not None else None,
-                "currency": r[5],
-                "period_type": r[6],
-                "source_title": r[7],
-                "source_url": r[8],
-            })
+        for row in rows:
+            results.append(
+                {
+                    "ticker": row[0],
+                    "company_name": row[1],
+                    "metric": row[2],
+                    "fiscal_year": int(row[3]) if row[3] is not None else None,
+                    "value": float(row[4]) if row[4] is not None else None,
+                    "currency": row[5],
+                    "period_type": row[6],
+                    "source_title": row[7],
+                    "source_url": row[8],
+                }
+            )
         return results
 
     def get_sector_peers(self, ticker: str) -> list[dict]:
         """Find all peer companies belonging to the same sector."""
-        sym = ticker.strip().upper()
+        symbol = ticker.strip().upper()
         cypher = """
         MATCH (target:Company {ticker: $ticker})-[:BELONGS_TO]->(s:Sector)<-[:BELONGS_TO]-(peer:Company)
         WHERE peer.ticker <> $ticker
@@ -251,17 +267,19 @@ class FinancialKnowledgeGraph:
         RETURN peer.ticker, peer.name, peer.exchange, peer.country, s.name, ind.name
         ORDER BY peer.name ASC
         """
-        rows = self.ro_query(cypher, {"ticker": sym})
+        rows = self.ro_query(cypher, {"ticker": symbol})
         peers = []
-        for r in rows:
-            peers.append({
-                "ticker": r[0],
-                "name": r[1],
-                "exchange": r[2],
-                "country": r[3],
-                "sector": r[4],
-                "industry": r[5] or "N/A",
-            })
+        for row in rows:
+            peers.append(
+                {
+                    "ticker": row[0],
+                    "name": row[1],
+                    "exchange": row[2],
+                    "country": row[3],
+                    "sector": row[4],
+                    "industry": row[5] or "N/A",
+                }
+            )
         return peers
 
     def get_peer_metric_comparison(
@@ -271,7 +289,7 @@ class FinancialKnowledgeGraph:
         fiscal_year: int | None = None,
     ) -> list[dict]:
         """Compare a target company with all sector peers on a specified metric."""
-        sym = ticker.strip().upper()
+        symbol = ticker.strip().upper()
         cypher = """
         MATCH (target:Company {ticker: $ticker})-[:BELONGS_TO]->(s:Sector)<-[:BELONGS_TO]-(c:Company)
         MATCH (c)-[:HAS_OBSERVATION]->(o:FinancialObservation)-[:MEASURES]->(m:FinancialMetric)
@@ -283,24 +301,29 @@ class FinancialKnowledgeGraph:
                (c.ticker = $ticker) AS is_target, doc.title, doc.source_url
         ORDER BY o.fiscal_year DESC, o.value DESC
         """
-        rows = self.ro_query(cypher, {
-            "ticker": sym,
-            "metric": metric_name,
-            "fiscal_year": fiscal_year,
-        })
+        rows = self.ro_query(
+            cypher,
+            {
+                "ticker": symbol,
+                "metric": metric_name,
+                "fiscal_year": fiscal_year,
+            },
+        )
         results = []
-        for r in rows:
-            results.append({
-                "ticker": r[0],
-                "name": r[1],
-                "sector": r[2],
-                "fiscal_year": int(r[3]) if r[3] is not None else None,
-                "value": float(r[4]) if r[4] is not None else None,
-                "currency": r[5],
-                "is_target": bool(r[6]),
-                "source_title": r[7],
-                "source_url": r[8],
-            })
+        for row in rows:
+            results.append(
+                {
+                    "ticker": row[0],
+                    "name": row[1],
+                    "sector": row[2],
+                    "fiscal_year": int(row[3]) if row[3] is not None else None,
+                    "value": float(row[4]) if row[4] is not None else None,
+                    "currency": row[5],
+                    "is_target": bool(row[6]),
+                    "source_title": row[7],
+                    "source_url": row[8],
+                }
+            )
         return results
 
     def get_financial_evidence(self, observation_id: str) -> dict | None:
@@ -318,41 +341,43 @@ class FinancialKnowledgeGraph:
         rows = self.ro_query(cypher, {"obs_id": observation_id})
         if not rows:
             return None
-        r = rows[0]
+        row = rows[0]
         return {
-            "company_ticker": r[0],
-            "company_name": r[1],
-            "metric_name": r[2],
-            "metric_unit": r[3],
-            "observation_id": r[4],
-            "value": float(r[5]) if r[5] is not None else None,
-            "currency": r[6],
-            "fiscal_year": int(r[7]) if r[7] is not None else None,
-            "period_type": r[8],
-            "period_end": r[9],
-            "filing_date": r[10],
-            "statement_type": r[11],
-            "period_id": r[12],
-            "document_id": r[13],
-            "document_title": r[14],
-            "document_url": r[15],
-            "publication_date": r[16],
-            "source_title": r[14],
-            "source_url": r[15],
-            "source_pub_date": r[16],
+            "company_ticker": row[0],
+            "company_name": row[1],
+            "metric_name": row[2],
+            "metric_unit": row[3],
+            "observation_id": row[4],
+            "value": float(row[5]) if row[5] is not None else None,
+            "currency": row[6],
+            "fiscal_year": int(row[7]) if row[7] is not None else None,
+            "period_type": row[8],
+            "period_end": row[9],
+            "filing_date": row[10],
+            "statement_type": row[11],
+            "period_id": row[12],
+            "document_id": row[13],
+            "document_title": row[14],
+            "document_url": row[15],
+            "publication_date": row[16],
+            "source_title": row[14],
+            "source_url": row[15],
+            "source_pub_date": row[16],
             "source_license": "Public SEC 10-K Filing / Public Annual Report",
-            "formatted_value": f"{float(r[5]):,.2f}" if r[5] is not None else "N/A",
+            "formatted_value": f"{float(row[5]):,.2f}" if row[5] is not None else "N/A",
             "evidence_path": (
-                f"(:Company {{ticker: '{r[0]}'}}) "
-                f"-[:HAS_OBSERVATION]-> (:FinancialObservation {{id: '{r[4]}', value: {r[5]}}}) "
-                f"-[:MEASURES]-> (:FinancialMetric {{name: '{r[2]}'}}) "
-                f"| -[:SUPPORTED_BY]-> (:SourceDocument {{title: '{r[14]}'}})"
+                f"(:Company {{ticker: '{row[0]}'}}) "
+                f"-[:HAS_OBSERVATION]-> (:FinancialObservation {{id: '{row[4]}', value: {row[5]}}}) "
+                f"-[:MEASURES]-> (:FinancialMetric {{name: '{row[2]}'}}) "
+                f"| -[:SUPPORTED_BY]-> (:SourceDocument {{title: '{row[14]}'}})"
             ),
         }
 
-    def trace_evidence_path(self, ticker: str, metric_name: str, fiscal_year: int | None = None) -> dict | None:
+    def trace_evidence_path(
+        self, ticker: str, metric_name: str, fiscal_year: int | None = None
+    ) -> dict | None:
         """Trace evidence path for a specific ticker, metric, and optional year (defaults to latest)."""
-        sym = ticker.strip().upper()
+        symbol = ticker.strip().upper()
         if fiscal_year:
             cypher = """
             MATCH (c:Company {ticker: $ticker})-[:HAS_OBSERVATION]->(o:FinancialObservation)-[:MEASURES]->(m:FinancialMetric)
@@ -361,7 +386,7 @@ class FinancialKnowledgeGraph:
               AND o.period_type = 'annual'
             RETURN o.id LIMIT 1
             """
-            params = {"ticker": sym, "metric": metric_name, "fiscal_year": fiscal_year}
+            params = {"ticker": symbol, "metric": metric_name, "fiscal_year": fiscal_year}
         else:
             cypher = """
             MATCH (c:Company {ticker: $ticker})-[:HAS_OBSERVATION]->(o:FinancialObservation)-[:MEASURES]->(m:FinancialMetric)
@@ -371,7 +396,7 @@ class FinancialKnowledgeGraph:
             ORDER BY o.fiscal_year DESC
             LIMIT 1
             """
-            params = {"ticker": sym, "metric": metric_name}
+            params = {"ticker": symbol, "metric": metric_name}
         rows = self.ro_query(cypher, params)
         if not rows:
             return None
@@ -379,46 +404,50 @@ class FinancialKnowledgeGraph:
 
     def get_company_financial_history(self, ticker: str, period_type: str = "annual") -> dict:
         """Fetch all available metrics and historical observations for a company."""
-        sym = ticker.strip().upper()
+        symbol = ticker.strip().upper()
         cypher = """
         MATCH (c:Company {ticker: $ticker})-[:HAS_OBSERVATION]->(o:FinancialObservation)-[:MEASURES]->(m:FinancialMetric)
         WHERE ($period_type = 'all' OR o.period_type = $period_type)
         RETURN m.name, o.fiscal_year, o.value, o.currency, o.period_end
         ORDER BY m.name ASC, o.fiscal_year ASC
         """
-        rows = self.ro_query(cypher, {"ticker": sym, "period_type": period_type})
+        rows = self.ro_query(cypher, {"ticker": symbol, "period_type": period_type})
         history: dict[str, list[dict]] = {}
-        for r in rows:
-            metric = r[0]
+        for row in rows:
+            metric = row[0]
             if metric not in history:
                 history[metric] = []
-            history[metric].append({
-                "year": int(r[1]) if r[1] is not None else None,
-                "value": float(r[2]) if r[2] is not None else None,
-                "currency": r[3],
-                "period_end": r[4],
-            })
-        return {"ticker": sym, "metrics": history}
+            history[metric].append(
+                {
+                    "year": int(row[1]) if row[1] is not None else None,
+                    "value": float(row[2]) if row[2] is not None else None,
+                    "currency": row[3],
+                    "period_end": row[4],
+                }
+            )
+        return {"ticker": symbol, "metrics": history}
 
     def get_available_financial_years(self, ticker: str) -> list[int]:
         """Return sorted list of distinct fiscal years available for a company."""
-        sym = ticker.strip().upper()
+        symbol = ticker.strip().upper()
         cypher = """
         MATCH (c:Company {ticker: $ticker})-[:HAS_OBSERVATION]->(o:FinancialObservation)
         WHERE o.period_type = 'annual' AND o.fiscal_year IS NOT NULL
         RETURN DISTINCT o.fiscal_year
         ORDER BY o.fiscal_year ASC
         """
-        rows = self.ro_query(cypher, {"ticker": sym})
-        return [int(r[0]) for r in rows if r[0] is not None]
+        rows = self.ro_query(cypher, {"ticker": symbol})
+        return [int(row[0]) for row in rows if row[0] is not None]
 
-    def get_annual_financials(self, ticker: str, years: list[int] | None = None) -> dict[int, dict[str, Any]]:
+    def get_annual_financials(
+        self, ticker: str, years: list[int] | None = None
+    ) -> dict[int, dict[str, Any]]:
         """Retrieve all annual financial metrics mapped by fiscal year.
-        
+
         Returns:
             {2021: {"Total Revenue": ..., "Net Income": ..., "Operating Margin": ..., "Free Cash Flow": ..., "currency": "USD"}, ...}
         """
-        sym = ticker.strip().upper()
+        symbol = ticker.strip().upper()
         cypher = """
         MATCH (c:Company {ticker: $ticker})-[:HAS_OBSERVATION]->(o:FinancialObservation)-[:MEASURES]->(m:FinancialMetric)
         WHERE o.period_type = 'annual' AND o.fiscal_year IS NOT NULL
@@ -426,21 +455,21 @@ class FinancialKnowledgeGraph:
         RETURN o.fiscal_year, m.name, o.value, o.currency
         ORDER BY o.fiscal_year ASC, m.name ASC
         """
-        rows = self.ro_query(cypher, {"ticker": sym, "years": years})
+        rows = self.ro_query(cypher, {"ticker": symbol, "years": years})
         result: dict[int, dict[str, Any]] = {}
-        for r in rows:
-            fy = int(r[0])
-            metric = r[1]
-            val = float(r[2]) if r[2] is not None else None
-            curr = r[3] or "USD"
+        for row in rows:
+            fy = int(row[0])
+            metric = row[1]
+            value = float(row[2]) if row[2] is not None else None
+            currency = row[3] or "USD"
             if fy not in result:
-                result[fy] = {"currency": curr}
-            result[fy][metric] = val
+                result[fy] = {"currency": currency}
+            result[fy][metric] = value
         return result
 
     def get_quarterly_financials(self, ticker: str, years: list[int] | None = None) -> list[dict]:
         """Retrieve quarterly financial observations for a company."""
-        sym = ticker.strip().upper()
+        symbol = ticker.strip().upper()
         cypher = """
         MATCH (c:Company {ticker: $ticker})-[:HAS_OBSERVATION]->(o:FinancialObservation)-[:MEASURES]->(m:FinancialMetric)
         WHERE o.period_type = 'quarterly'
@@ -448,16 +477,18 @@ class FinancialKnowledgeGraph:
         RETURN o.fiscal_year, o.period_end, m.name, o.value, o.currency
         ORDER BY o.period_end ASC, m.name ASC
         """
-        rows = self.ro_query(cypher, {"ticker": sym, "years": years})
+        rows = self.ro_query(cypher, {"ticker": symbol, "years": years})
         results = []
-        for r in rows:
-            results.append({
-                "fiscal_year": int(r[0]) if r[0] is not None else None,
-                "period_end": r[1],
-                "metric": r[2],
-                "value": float(r[3]) if r[3] is not None else None,
-                "currency": r[4] or "USD",
-            })
+        for row in rows:
+            results.append(
+                {
+                    "fiscal_year": int(row[0]) if row[0] is not None else None,
+                    "period_end": row[1],
+                    "metric": row[2],
+                    "value": float(row[3]) if row[3] is not None else None,
+                    "currency": row[4] or "USD",
+                }
+            )
         return results
 
     def get_financial_metric(self, ticker: str, metric: str, year: int) -> dict | None:
@@ -465,12 +496,14 @@ class FinancialKnowledgeGraph:
         obs = self.get_company_financials(ticker, metric, fiscal_year=year, limit=1)
         return obs[0] if obs else None
 
-    def compare_financial_years(self, ticker: str, metrics: list[str], years: list[int] | None = None) -> dict[str, Any]:
+    def compare_financial_years(
+        self, ticker: str, metrics: list[str], years: list[int] | None = None
+    ) -> dict[str, Any]:
         """Compare specific metrics across specified fiscal years."""
-        sym = ticker.strip().upper()
-        financials = self.get_annual_financials(sym, years=years)
+        symbol = ticker.strip().upper()
+        financials = self.get_annual_financials(symbol, years=years)
         return {
-            "ticker": sym,
+            "ticker": symbol,
             "years": sorted(list(financials.keys())),
             "metrics": metrics,
             "data": financials,
@@ -495,26 +528,38 @@ class FinancialKnowledgeGraph:
         """Get summary node and relationship counts from FalkorDB."""
         stats: dict[str, int] = {}
         labels = [
-            "Company", "Sector", "Industry", "FinancialMetric",
-            "FinancialObservation", "ReportingPeriod", "FinancialStatement", "SourceDocument"
+            "Company",
+            "Sector",
+            "Industry",
+            "FinancialMetric",
+            "FinancialObservation",
+            "ReportingPeriod",
+            "FinancialStatement",
+            "SourceDocument",
         ]
-        for lbl in labels:
+        for label_name in labels:
             try:
-                res = self.ro_query(f"MATCH (n:{lbl}) RETURN count(n)")
-                stats[lbl] = res[0][0] if res else 0
+                res = self.ro_query(f"MATCH (n:{label_name}) RETURN count(n)")
+                stats[label_name] = res[0][0] if res else 0
             except Exception:
-                stats[lbl] = 0
+                stats[label_name] = 0
 
         rel_types = [
-            "BELONGS_TO", "OPERATES_IN", "REPORTS", "FOR_PERIOD",
-            "CONTAINS", "MEASURES", "SUPPORTED_BY", "HAS_OBSERVATION"
+            "BELONGS_TO",
+            "OPERATES_IN",
+            "REPORTS",
+            "FOR_PERIOD",
+            "CONTAINS",
+            "MEASURES",
+            "SUPPORTED_BY",
+            "HAS_OBSERVATION",
         ]
-        for rel in rel_types:
+        for relationship in rel_types:
             try:
-                res = self.ro_query(f"MATCH ()-[r:{rel}]->() RETURN count(r)")
-                stats[f"REL_{rel}"] = res[0][0] if res else 0
+                res = self.ro_query(f"MATCH ()-[r:{relationship}]->() RETURN count(r)")
+                stats[f"REL_{relationship}"] = res[0][0] if res else 0
             except Exception:
-                stats[f"REL_{rel}"] = 0
+                stats[f"REL_{relationship}"] = 0
 
         return stats
 
@@ -522,7 +567,9 @@ class FinancialKnowledgeGraph:
 _fkg_instance: FinancialKnowledgeGraph | None = None
 
 
-def get_financial_graph(host: str | None = None, port: int | None = None, graph_name: str | None = None) -> FinancialKnowledgeGraph:
+def get_financial_graph(
+    host: str | None = None, port: int | None = None, graph_name: str | None = None
+) -> FinancialKnowledgeGraph:
     """Singleton getter for the FinancialKnowledgeGraph client."""
     global _fkg_instance
     if _fkg_instance is None:

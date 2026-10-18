@@ -17,15 +17,7 @@ def memory_for(workspace: str, user: str, _embedding_model):
 
 
 def render_chat_navigation(workspace: str, user: str, embedding_model) -> str:
-    """Compact inline chat thread management — 100% full width, zero sidebar usage.
-
-    Preserves:
-    - New Chat
-    - Switch Chat (dropdown)
-    - Rename Chat (popover)
-    - Delete Chat
-    - Full persistence via FalkorDB
-    """
+    """Create, select, rename, and delete persistent chat threads above the conversation."""
     try:
         memory = memory_for(workspace, user, embedding_model)
     except Exception:
@@ -42,9 +34,11 @@ def render_chat_navigation(workspace: str, user: str, embedding_model) -> str:
         if threads:
             st.session_state.active_thread_id = threads[0]["id"]
         else:
-            new_th = memory.create_thread("New Chat") if memory else {"id": "main", "title": "New Chat"}
-            st.session_state.active_thread_id = new_th["id"]
-            threads = [new_th]
+            new_thread = (
+                memory.create_thread("New Chat") if memory else {"id": "main", "title": "New Chat"}
+            )
+            st.session_state.active_thread_id = new_thread["id"]
+            threads = [new_thread]
 
     active_id = st.session_state.active_thread_id
 
@@ -56,16 +50,18 @@ def render_chat_navigation(workspace: str, user: str, embedding_model) -> str:
     options = [t["id"] for t in threads]
 
     with st.container():
-        col_lbl, col_sel, col_new, col_ren, col_del = st.columns([1.5, 4.5, 1.8, 1.1, 1.1])
-        with col_lbl:
+        label_column, selector_column, new_column, rename_column, delete_column = st.columns(
+            [1.5, 4.5, 1.8, 1.1, 1.1]
+        )
+        with label_column:
             st.markdown("##### 💬 Chat")
-        with col_sel:
-            curr_idx = options.index(active_id) if active_id in options else 0
+        with selector_column:
+            current_index = options.index(active_id) if active_id in options else 0
             selected = st.selectbox(
                 "Conversation",
                 options=options,
                 format_func=lambda tid: f"{thread_titles.get(tid, tid)}",
-                index=curr_idx,
+                index=current_index,
                 key="chat_thread_selector",
                 label_visibility="collapsed",
             )
@@ -74,11 +70,14 @@ def render_chat_navigation(workspace: str, user: str, embedding_model) -> str:
                 # Restore thread-specific ticker into session state if available
                 if memory:
                     try:
-                        th_ticker = memory.get_thread_ticker(selected)
-                        if th_ticker:
+                        thread_ticker = memory.get_thread_ticker(selected)
+                        if thread_ticker:
                             from stock_api import get_selected_stock_context
-                            st.session_state["selected_stock"] = get_selected_stock_context(th_ticker)
-                            st.session_state["_ticker_sync"] = th_ticker
+
+                            st.session_state["selected_stock"] = get_selected_stock_context(
+                                thread_ticker
+                            )
+                            st.session_state["_ticker_sync"] = thread_ticker
                         else:
                             st.session_state["selected_stock"] = None
                             st.session_state["_ticker_sync"] = ""
@@ -90,13 +89,16 @@ def render_chat_navigation(workspace: str, user: str, embedding_model) -> str:
                 st.session_state.pop("conversation_ticker", None)
                 st.rerun()
 
-        with col_new:
-            if st.button("➕ New Chat", use_container_width=True, type="primary", key="btn_new_chat"):
+        with new_column:
+            if st.button(
+                "➕ New Chat", use_container_width=True, type="primary", key="btn_new_chat"
+            ):
                 if memory:
-                    new_th = memory.create_thread("New Chat", ticker="")
-                    st.session_state.active_thread_id = new_th["id"]
+                    new_thread = memory.create_thread("New Chat", ticker="")
+                    st.session_state.active_thread_id = new_thread["id"]
                 else:
                     from uuid import uuid4
+
                     st.session_state.active_thread_id = uuid4().hex
                 # Clean slate for fresh conversation
                 st.session_state["selected_stock"] = None
@@ -105,17 +107,19 @@ def render_chat_navigation(workspace: str, user: str, embedding_model) -> str:
                 st.session_state.pop("conversation_ticker", None)
                 st.rerun()
 
-        with col_ren:
+        with rename_column:
             active_title = thread_titles.get(active_id, "New Chat")
             with st.popover("✏️", help="Rename conversation"):
                 st.caption("Rename current chat")
-                new_title = st.text_input("Title", value=active_title, key=f"rename_input_{active_id}")
+                new_title = st.text_input(
+                    "Title", value=active_title, key=f"rename_input_{active_id}"
+                )
                 if st.button("Save", key=f"save_rename_{active_id}", use_container_width=True):
                     if memory and new_title.strip():
                         memory.rename_thread(active_id, new_title.strip())
                         st.rerun()
 
-        with col_del:
+        with delete_column:
             if st.button("🗑️", help="Delete conversation", key=f"del_btn_{active_id}"):
                 if memory:
                     memory.delete_thread(active_id)
@@ -123,8 +127,12 @@ def render_chat_navigation(workspace: str, user: str, embedding_model) -> str:
                 if remaining:
                     st.session_state.active_thread_id = remaining[0]["id"]
                 else:
-                    new_th = memory.create_thread("New Chat") if memory else {"id": "main", "title": "New Chat"}
-                    st.session_state.active_thread_id = new_th["id"]
+                    new_thread = (
+                        memory.create_thread("New Chat")
+                        if memory
+                        else {"id": "main", "title": "New Chat"}
+                    )
+                    st.session_state.active_thread_id = new_thread["id"]
                 st.rerun()
 
     return st.session_state.active_thread_id
@@ -147,12 +155,18 @@ def render_agent_chat(
     """Render conversation interface for the active thread with shared FalkorDB memory access."""
     if isinstance(stock_context, str):
         ticker = stock_context.strip().upper()
-        ctx = {
-            "symbol": ticker,
-            "companyName": ticker,
-            "currency": "INR" if ticker.endswith((".NS", ".BO")) else "USD",
-            "exchange": "NSE" if ticker.endswith(".NS") else ("BSE" if ticker.endswith(".BO") else "US"),
-        } if ticker else None
+        ctx = (
+            {
+                "symbol": ticker,
+                "companyName": ticker,
+                "currency": "INR" if ticker.endswith((".NS", ".BO")) else "USD",
+                "exchange": (
+                    "NSE" if ticker.endswith(".NS") else ("BSE" if ticker.endswith(".BO") else "US")
+                ),
+            }
+            if ticker
+            else None
+        )
     elif isinstance(stock_context, dict):
         ctx = stock_context
         ticker = ctx.get("symbol", "").strip().upper()
@@ -166,6 +180,7 @@ def render_agent_chat(
             if raw_input:
                 try:
                     from stock_api import get_selected_stock_context
+
                     ctx = get_selected_stock_context(raw_input)
                     ticker = ctx.get("symbol", "").strip().upper() if ctx else ""
                 except Exception:
@@ -223,7 +238,9 @@ def render_agent_chat(
         exch = ctx.get("exchange", "")
         st.caption(f"Active stock context: **{comp}** (`{ticker}`) · {exch} · {curr}")
     else:
-        st.caption("Active stock context: *None (select a stock above or mention a company name in your query)*")
+        st.caption(
+            "Active stock context: *None (select a stock above or mention a company name in your query)*"
+        )
 
     # Render isolated conversation history for the ACTIVE THREAD ONLY
     try:
@@ -235,7 +252,9 @@ def render_agent_chat(
     except Exception as exc:
         st.warning(f"Unable to load previous conversations: {exc}")
 
-    question = st.chat_input("Ask about your financials or earlier sessions...", key=f"chat_input_{thread}")
+    question = st.chat_input(
+        "Ask about your financials or earlier sessions...", key=f"chat_input_{thread}"
+    )
     if not question:
         return
 
@@ -246,6 +265,7 @@ def render_agent_chat(
         try:
             try:
                 from api_key_manager import get_key_manager
+
                 llm, _ = get_key_manager().make_llm()
             except Exception:
                 llm = ChatGroq(model=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"))
@@ -273,7 +293,11 @@ def render_agent_chat(
             )
         except Exception as exc:
             from api_key_manager import OrganizationQuotaExhaustedError
-            if isinstance(exc, OrganizationQuotaExhaustedError) or "OrganizationQuotaExhaustedError" in type(exc).__name__:
+
+            if (
+                isinstance(exc, OrganizationQuotaExhaustedError)
+                or "OrganizationQuotaExhaustedError" in type(exc).__name__
+            ):
                 mins = max(1, int(getattr(exc, "retry_after_secs", 1800) / 60))
                 st.warning(
                     f"⚠️ **AI Token Quota Exceeded (TPD)**: Groq inference has reached its daily limit for your organization. "
@@ -293,21 +317,26 @@ def render_standalone_chat_page(workspace: str, user: str, embedding_model) -> N
 
     try:
         memory = memory_for(workspace, user, embedding_model)
-        th_ticker = memory.get_thread_ticker(active_thread_id)
+        thread_ticker = memory.get_thread_ticker(active_thread_id)
     except Exception:
-        th_ticker = ""
+        thread_ticker = ""
 
     selected_stock = None
-    if th_ticker:
+    if thread_ticker:
         try:
             from stock_api import get_selected_stock_context
-            selected_stock = get_selected_stock_context(th_ticker)
+
+            selected_stock = get_selected_stock_context(thread_ticker)
         except Exception:
             selected_stock = {
-                "symbol": th_ticker,
-                "companyName": th_ticker,
-                "currency": "INR" if th_ticker.endswith((".NS", ".BO")) else "USD",
-                "exchange": "NSE" if th_ticker.endswith(".NS") else ("BSE" if th_ticker.endswith(".BO") else "US"),
+                "symbol": thread_ticker,
+                "companyName": thread_ticker,
+                "currency": "INR" if thread_ticker.endswith((".NS", ".BO")) else "USD",
+                "exchange": (
+                    "NSE"
+                    if thread_ticker.endswith(".NS")
+                    else ("BSE" if thread_ticker.endswith(".BO") else "US")
+                ),
             }
     elif st.session_state.get("selected_stock"):
         selected_stock = st.session_state["selected_stock"]
@@ -316,6 +345,7 @@ def render_standalone_chat_page(workspace: str, user: str, embedding_model) -> N
         if raw:
             try:
                 from stock_api import get_selected_stock_context
+
                 selected_stock = get_selected_stock_context(raw)
             except Exception:
                 selected_stock = None
@@ -327,4 +357,3 @@ def render_standalone_chat_page(workspace: str, user: str, embedding_model) -> N
         selected_stock,
         embedding_model,
     )
-

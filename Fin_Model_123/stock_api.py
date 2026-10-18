@@ -92,7 +92,9 @@ def _get_rows(session: Any, path: str, params: dict[str, Any], key: str) -> list
     except requests.HTTPError as exc:
         status = exc.response.status_code if exc.response is not None else "unknown"
         if status in (401, 402, 403):
-            raise FinancialAPIError(f"API request rejected. Check API key and whether your plan includes {path} for this symbol (HTTP {status}).") from exc
+            raise FinancialAPIError(
+                f"API request rejected. Check API key and whether your plan includes {path} for this symbol (HTTP {status})."
+            ) from exc
         if status == 429:
             raise FinancialAPIError("Rate limit reached. Retry later.") from exc
         raise FinancialAPIError(f"Request failed (HTTP {status}) for {path}.") from exc
@@ -100,7 +102,9 @@ def _get_rows(session: Any, path: str, params: dict[str, Any], key: str) -> list
         raise FinancialAPIError(f"Could not fetch {path}: {exc}") from exc
 
     if isinstance(body, dict):
-        raise FinancialAPIError(f"Did not return statement rows for {path}. Check the stock symbol and API access.")
+        raise FinancialAPIError(
+            f"Did not return statement rows for {path}. Check the stock symbol and API access."
+        )
     if not isinstance(body, list) or not all(isinstance(x, dict) for x in body):
         raise FinancialAPIError(f"Invalid response for {path}.")
     if not body:
@@ -189,17 +193,21 @@ def parse_statements(
         )
     currency = next(iter(currencies), "UNKNOWN")
 
-    bs_years = _annual_rows(balance, "balance")
-    is_years = _annual_rows(income, "income")
-    common = sorted(set(bs_years) & set(is_years))
+    balance_years = _annual_rows(balance, "balance")
+    income_years = _annual_rows(income, "income")
+    common = sorted(set(balance_years) & set(income_years))
 
     if not common:
-        raise FinancialAPIError("No matching annual fiscal years between balance and income statements.")
+        raise FinancialAPIError(
+            "No matching annual fiscal years between balance and income statements."
+        )
     if len(common) < 2:
-        raise FinancialAPIError("At least two matching annual fiscal years are required for growth analysis.")
+        raise FinancialAPIError(
+            "At least two matching annual fiscal years are required for growth analysis."
+        )
 
-    bs = pd.DataFrame([bs_years[y] for y in common], index=common).rename_axis("Fiscal year")
-    inc = pd.DataFrame([is_years[y] for y in common], index=common).rename_axis("Fiscal year")
+    bs = pd.DataFrame([balance_years[y] for y in common], index=common).rename_axis("Fiscal year")
+    inc = pd.DataFrame([income_years[y] for y in common], index=common).rename_axis("Fiscal year")
     q = _quarter_rows(quarterly)
 
     if inc["Revenue"].isna().all() and inc["Net profit"].isna().all():
@@ -249,9 +257,18 @@ def fetch_stock_statements(
 
     client = session or requests.Session()
     base = {"symbol": symbol}
-    balance = _get_rows(client, "balance-sheet-statement", {**base, "period": "annual", "limit": annual_limit}, api_key)
-    income = _get_rows(client, "income-statement", {**base, "period": "annual", "limit": annual_limit}, api_key)
-    quarterly = _get_rows(client, "income-statement", {**base, "period": "quarter", "limit": quarter_limit}, api_key)
+    balance = _get_rows(
+        client,
+        "balance-sheet-statement",
+        {**base, "period": "annual", "limit": annual_limit},
+        api_key,
+    )
+    income = _get_rows(
+        client, "income-statement", {**base, "period": "annual", "limit": annual_limit}, api_key
+    )
+    quarterly = _get_rows(
+        client, "income-statement", {**base, "period": "quarter", "limit": quarter_limit}, api_key
+    )
 
     return parse_statements(symbol, balance, income, quarterly)
 
@@ -278,14 +295,16 @@ def calculate_ratios(statements: StockStatements) -> dict[str, pd.DataFrame]:
         if _number(r["Total assets"]) is not None and _number(r["Current liabilities"]) is not None:
             employed = r["Total assets"] - r["Current liabilities"]
 
-        rows.append({
-            "Fiscal year": year,
-            "Operating margin (%)": _pct(r["Operating profit (EBIT)"], r["Revenue"]),
-            "Net margin (%)": _pct(r["Net profit"], r["Revenue"]),
-            "ROE - closing equity (%)": _pct(r["Net profit"], r["Shareholders equity"]),
-            "ROCE - EBIT / capital employed (%)": _pct(r["Operating profit (EBIT)"], employed),
-            "Debt / equity (x)": _ratio(r["Borrowings"], r["Shareholders equity"]),
-        })
+        rows.append(
+            {
+                "Fiscal year": year,
+                "Operating margin (%)": _pct(r["Operating profit (EBIT)"], r["Revenue"]),
+                "Net margin (%)": _pct(r["Net profit"], r["Revenue"]),
+                "ROE - closing equity (%)": _pct(r["Net profit"], r["Shareholders equity"]),
+                "ROCE - EBIT / capital employed (%)": _pct(r["Operating profit (EBIT)"], employed),
+                "Debt / equity (x)": _ratio(r["Borrowings"], r["Shareholders equity"]),
+            }
+        )
 
     ratios = pd.DataFrame(rows).set_index("Fiscal year")
 
@@ -298,14 +317,18 @@ def calculate_ratios(statements: StockStatements) -> dict[str, pd.DataFrame]:
     for col, label in metrics:
         vals = inc[col]
         growth[label] = [
-            _pct(vals.loc[y] - vals.loc[y - 1], vals.loc[y - 1])
-            if (y - 1 in vals.index and pd.notna(vals.loc[y]) and pd.notna(vals.loc[y - 1]))
-            else None
+            (
+                _pct(vals.loc[y] - vals.loc[y - 1], vals.loc[y - 1])
+                if (y - 1 in vals.index and pd.notna(vals.loc[y]) and pd.notna(vals.loc[y - 1]))
+                else None
+            )
             for y in inc.index
         ]
 
     qratios = pd.DataFrame(index=q.index)
-    qratios["Operating margin (%)"] = [_pct(r["Operating profit (EBIT)"], r["Revenue"]) for _, r in q.iterrows()]
+    qratios["Operating margin (%)"] = [
+        _pct(r["Operating profit (EBIT)"], r["Revenue"]) for _, r in q.iterrows()
+    ]
     qratios["Net margin (%)"] = [_pct(r["Net profit"], r["Revenue"]) for _, r in q.iterrows()]
 
     # Match each quarter with the same quarter in the previous year
@@ -318,11 +341,11 @@ def calculate_ratios(statements: StockStatements) -> dict[str, pd.DataFrame]:
     yoy = []
     for date, r in q.iterrows():
         yr = r["Fiscal year"]
-        prev = lookup.get((int(yr) - 1, r["Fiscal quarter"])) if pd.notna(yr) else None
+        previous = lookup.get((int(yr) - 1, r["Fiscal quarter"])) if pd.notna(yr) else None
         item = {"Quarter end": date}
         for col, label in metrics:
             curr_val = _number(r[col])
-            prev_val = _number(prev[col]) if prev is not None else None
+            prev_val = _number(previous[col]) if previous is not None else None
             item[label] = (
                 _pct(curr_val - prev_val, prev_val)
                 if (curr_val is not None and prev_val is not None)
@@ -399,11 +422,14 @@ def fetch_historical_prices(
     if invalid_prices.any():
         df = df[~invalid_prices]
     if df.empty:
-        raise FinancialAPIError(f"Historical price data for {symbol} contains invalid negative prices.")
+        raise FinancialAPIError(
+            f"Historical price data for {symbol} contains invalid negative prices."
+        )
     # Deduplicate timestamps, keeping the most recent point
     df = df[~df.index.duplicated(keep="last")]
     df = df.sort_index()
     return df
+
 
 def fetch_financial_statements(
     symbol: str,
@@ -445,23 +471,27 @@ def fetch_financial_statements(
     try:
         df = getattr(ticker, attr)
     except Exception as exc:
-        raise FinancialAPIError(f"Failed to fetch {statement} ({period}) for {symbol}: {exc}") from exc
+        raise FinancialAPIError(
+            f"Failed to fetch {statement} ({period}) for {symbol}: {exc}"
+        ) from exc
 
     if df is None or df.empty:
         raise FinancialAPIError(f"No {period} {statement} data available for {symbol}.")
 
     financials = []
     for col in df.columns:
-        period_end = col.strftime("%Y-%m-%d") if hasattr(col, 'strftime') else str(col)
+        period_end = col.strftime("%Y-%m-%d") if hasattr(col, "strftime") else str(col)
         metrics = {}
         for metric_name, value in df[col].items():
             if pd.notna(value):
                 metrics[metric_name] = float(value)
         if metrics:
-            financials.append({
-                "periodEnd": period_end,
-                "metrics": metrics,
-            })
+            financials.append(
+                {
+                    "periodEnd": period_end,
+                    "metrics": metrics,
+                }
+            )
 
     # Reverse so oldest first
     financials.reverse()
@@ -515,12 +545,12 @@ KNOWN_TICKER_MAPPINGS = {
 }
 
 
-
 def resolve_ticker(raw: str, exchange: str = "NSE") -> str:
     cleaned = raw.strip().upper()
     if cleaned in KNOWN_TICKER_MAPPINGS:
         return KNOWN_TICKER_MAPPINGS[cleaned]
     from stock_resolver import resolve_ticker as sr_resolve_ticker
+
     return sr_resolve_ticker(raw, default_exchange=exchange)
 
 
@@ -530,13 +560,16 @@ def get_selected_stock_context(symbol_or_name: str, exchange: str = "NSE") -> di
         raise FinancialAPIError("No ticker or company name provided.")
 
     from stock_resolver import resolve_company as sr_resolve_company
+
     comp_info = sr_resolve_company(raw)
 
     if comp_info:
         resolved = comp_info["ticker"]
         comp_name = comp_info.get("name") or resolved
         curr = comp_info.get("currency") or ("INR" if resolved.endswith((".NS", ".BO")) else "USD")
-        exch = comp_info.get("exchange") or ("NSE" if resolved.endswith(".NS") else ("BSE" if resolved.endswith(".BO") else "US"))
+        exch = comp_info.get("exchange") or (
+            "NSE" if resolved.endswith(".NS") else ("BSE" if resolved.endswith(".BO") else "US")
+        )
     else:
         resolved = resolve_ticker(raw, exchange)
         comp_name = resolved
@@ -567,20 +600,24 @@ def get_stock_price(symbol: str) -> dict:
     ticker = yf.Ticker(symbol)
     info = ticker.info or {}
     fast = getattr(ticker, "fast_info", None)
-    price = getattr(fast, "last_price", None) or info.get("currentPrice") or info.get("regularMarketPrice")
-    prev = getattr(fast, "previous_close", None) or info.get("regularMarketPreviousClose")
+    price = (
+        getattr(fast, "last_price", None)
+        or info.get("currentPrice")
+        or info.get("regularMarketPrice")
+    )
+    previous = getattr(fast, "previous_close", None) or info.get("regularMarketPreviousClose")
     if price is not None and price < 0:
         price = None
-    if prev is not None and prev < 0:
-        prev = None
+    if previous is not None and previous < 0:
+        previous = None
     curr = info.get("currency") or ("INR" if symbol.endswith((".NS", ".BO")) else "USD")
-    change = (price - prev) if (price is not None and prev is not None) else None
-    change_pct = (change / prev * 100) if (change is not None and prev) else None
+    change = (price - previous) if (price is not None and previous is not None) else None
+    change_pct = (change / previous * 100) if (change is not None and previous) else None
     return {
         "symbol": symbol,
         "company": info.get("longName", info.get("shortName", symbol)),
         "price": price,
-        "previousClose": prev,
+        "previousClose": previous,
         "change": change,
         "changePercent": change_pct,
         "currency": curr,
@@ -668,4 +705,3 @@ def get_company_overview(symbol: str) -> dict:
         "dividendYield": info.get("dividendYield"),
         "summary": (info.get("longBusinessSummary") or "")[:500],
     }
-

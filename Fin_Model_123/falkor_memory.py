@@ -73,6 +73,7 @@ class FalkorMemory:
         # Uses a separate graph namespace (FALKORDB_GRAPH env var, default: service_dependencies)
         try:
             from service_graph import get_service_graph
+
             if graph is None:
                 # graph was set from client above — reinitialise service graph with same client
                 svc_graph_name = os.getenv("FALKORDB_GRAPH", "service_dependencies")
@@ -83,6 +84,7 @@ class FalkorMemory:
         except Exception:
             # ServiceGraph is non-critical — FalkorMemory continues without it
             from service_graph import get_service_graph
+
             self.service_graph = get_service_graph(graph=None)
 
     def _ensure_indexes(self):
@@ -96,7 +98,10 @@ class FalkorMemory:
                 )
             except Exception as exc:
                 msg = str(exc).lower()
-                if not any(token in msg for token in ("already exists", "already indexed", "already has an index")):
+                if not any(
+                    token in msg
+                    for token in ("already exists", "already indexed", "already has an index")
+                ):
                     raise
 
         if hasattr(self.graph, "create_node_range_index"):
@@ -128,16 +133,16 @@ class FalkorMemory:
     def _embed(self, text: str) -> list[float]:
         if self.embeddings is None:
             return [0.0] * self.vector_dimension
-        h = hashlib.sha256(text.encode("utf-8")).hexdigest()
-        if h in _embed_cache:
-            return _embed_cache[h]
+        content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        if content_hash in _embed_cache:
+            return _embed_cache[content_hash]
         vector = [float(v) for v in self.embeddings.embed_query(text)]
         if len(vector) != self.vector_dimension:
             raise ValueError(
                 f"Embedding model produced {len(vector)} dimensions, expected {self.vector_dimension}"
             )
         if len(_embed_cache) < 2000:
-            _embed_cache[h] = vector
+            _embed_cache[content_hash] = vector
         return vector
 
     def remember(
@@ -201,7 +206,8 @@ class FalkorMemory:
 
         # Enforce memory retention limits per user and tenant
         max_limit = (
-            MAX_EPISODIC_MEMORIES if kind == "episodic"
+            MAX_EPISODIC_MEMORIES
+            if kind == "episodic"
             else (MAX_SEMANTIC_MEMORIES if kind == "semantic" else MAX_PROCEDURAL_MEMORIES)
         )
         try:
@@ -447,12 +453,14 @@ class FalkorMemory:
         else:
             self._local_threads[thread_id]["updated_at"] = now_ts
 
-        self._local_turns.setdefault(thread_id, []).append({
-            "role": role,
-            "content": content,
-            "agent": agent_id,
-            "created_at": now_ts,
-        })
+        self._local_turns.setdefault(thread_id, []).append(
+            {
+                "role": role,
+                "content": content,
+                "agent": agent_id,
+                "created_at": now_ts,
+            }
+        )
 
         self._query(
             """
@@ -516,12 +524,11 @@ class FalkorMemory:
         )
         if rows:
             return [
-                dict(zip(("role", "content", "agent", "created_at"), row))
-                for row in reversed(rows)
+                dict(zip(("role", "content", "agent", "created_at"), row)) for row in reversed(rows)
             ]
         # Fallback to local turns
         turns = self._local_turns.get(thread_id, [])
-        return turns[-int(limit):]
+        return turns[-int(limit) :]
 
     def search_memories(
         self,
@@ -549,10 +556,7 @@ class FalkorMemory:
             thread_id=thread_id.strip(),
             limit=int(limit),
         )
-        return [
-            dict(zip(("kind", "key", "content", "ticker", "score"), row))
-            for row in rows
-        ]
+        return [dict(zip(("kind", "key", "content", "ticker", "score"), row)) for row in rows]
 
     def list_memories(
         self,
@@ -643,10 +647,7 @@ class FalkorMemory:
             ticker=ticker.strip().upper(),
             limit=int(limit),
         )
-        return [
-            dict(zip(("content", "source", "ticker", "score"), row))
-            for row in rows
-        ]
+        return [dict(zip(("content", "source", "ticker", "score"), row)) for row in rows]
 
     def exact_financial_documents(
         self,
@@ -670,10 +671,7 @@ class FalkorMemory:
             period=str(year),
             limit=int(limit),
         )
-        return [
-            dict(zip(("content", "source", "ticker", "period"), row))
-            for row in rows
-        ]
+        return [dict(zip(("content", "source", "ticker", "period"), row)) for row in rows]
 
     def create_handoff(
         self,
@@ -774,6 +772,5 @@ class FalkorMemory:
             thread_id=thread_id.strip(),
         )
         return [
-            dict(id=r[0], thread_id=r[1], payload=json.loads(r[2]), from_agent=r[3])
-            for r in rows
+            dict(id=r[0], thread_id=r[1], payload=json.loads(r[2]), from_agent=r[3]) for r in rows
         ]
