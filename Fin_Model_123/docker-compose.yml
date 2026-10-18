@@ -1,0 +1,63 @@
+# ==============================================================================
+# FinGraph AI — Local Development Docker Compose
+# Orchestrates FalkorDB and the Streamlit application with health checks
+# ==============================================================================
+
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: fingraph-falkordb
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    environment:
+      REDIS_ARGS: "--appendonly yes --appendfsync everysec"
+      FALKORDB_ARGS: "THREAD_COUNT 8"
+    volumes:
+      - falkor_data:/data
+    mem_limit: 2g
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - fingraph_network
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fingraph-app
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8501:8501"
+    env_file:
+      - .env
+    environment:
+      - FALKORDB_HOST=falkordb
+      - FALKORDB_PORT=6379
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - fingraph_network
+
+networks:
+  fingraph_network:
+    driver: bridge
+
+volumes:
+  falkor_data:

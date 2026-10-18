@@ -1,0 +1,3 @@
+# Avoid the transformers/torchvision lazy-import warnings from Streamlit's watcher.
+[server]
+fileWatcherType = "none"

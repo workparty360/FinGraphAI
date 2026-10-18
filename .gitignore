@@ -1,0 +1,44 @@
+# Environment & Secrets
+.env
+*.env
+*.env.local
+*.pem
+*.key
+*.id_rsa
+*.id_ed25519
+
+# Python Bytecode & Environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv
+.venv/
+venv
+venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Pytest & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.cache
+
+# Databases & Persistence Volumes
+*.db
+*.sqlite*
+falkor_data/
+backups/
+caddy_data/
+caddy_config/
+
+# OS Artifacts
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~

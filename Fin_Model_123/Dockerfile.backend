@@ -1,0 +1,32 @@
+# ==============================================================================
+# FinGraph AI — Backend & Graph Initializer Service Container
+# Manages FalkorDB graph schema initialization, seeding, and verification
+# ==============================================================================
+
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    gcc \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+RUN groupadd -g 1000 appgroup && \
+    useradd -u 1000 -g appgroup -s /bin/bash -m appuser
+
+COPY . .
+RUN chown -R appuser:appgroup /app
+
+USER appuser
+
+# By default, runs graph verification or can be invoked with init/seed scripts
+CMD ["python", "scripts/verify_graph.py"]
